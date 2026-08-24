@@ -208,7 +208,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 /// 按发布时间倒序翻页，遇到已入库的就停
 ///
 /// 每翻一页就把这页的新 mod 同步掉，进程中途挂掉也不会丢掉已发现的部分
-pub async fn search(app: &App, game_id: i32, max_pages: i64) -> Result<TaskSummary> {
+pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
     let mut summary = TaskSummary::default();
 
@@ -265,7 +265,8 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64) -> Result<TaskSumma
                 "搜索翻页"
             );
 
-            if !existing.is_empty() {
+            // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
+            if !full && !existing.is_empty() {
                 tracing::debug!(class_id, index, "遇到已入库的 mod，停止翻页");
                 break;
             }

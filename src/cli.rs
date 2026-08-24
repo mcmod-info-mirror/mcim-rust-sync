@@ -55,6 +55,10 @@ pub enum CurseforgeTask {
         /// 每个 class 最多翻多少页，0 表示翻到上游给不出结果为止
         #[arg(long, default_value_t = 0)]
         max_pages: i64,
+
+        /// 冷启动用：遇到已入库的条目也继续翻，直到上游没有更多结果
+        #[arg(long)]
+        full: bool,
     },
 
     /// 刷新分类
@@ -80,6 +84,10 @@ pub enum ModrinthTask {
         /// 最多翻多少页，0 表示翻到上游给不出结果为止
         #[arg(long, default_value_t = 0)]
         max_pages: i64,
+
+        /// 冷启动用：遇到已入库的条目也继续翻，直到上游没有更多结果
+        #[arg(long)]
+        full: bool,
     },
 
     /// 刷新 categories、loaders 与 game_versions

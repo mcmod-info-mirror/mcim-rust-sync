@@ -216,7 +216,7 @@ pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
 /// 按最新发布翻页，遇到已入库的项目就停
 ///
 /// 每翻一页就同步这页的新项目，冷启动跑十几万条时进程中断也不会丢进度
-pub async fn search(app: &App, max_pages: i64) -> Result<TaskSummary> {
+pub async fn search(app: &App, max_pages: i64, full: bool) -> Result<TaskSummary> {
     let mr = app.modrinth();
     let mut summary = TaskSummary::default();
     let mut offset = 0i64;
@@ -274,7 +274,8 @@ pub async fn search(app: &App, max_pages: i64) -> Result<TaskSummary> {
             "搜索翻页"
         );
 
-        if !existing.is_empty() {
+        // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
+        if !full && !existing.is_empty() {
             tracing::debug!(offset, "遇到已入库的项目，停止翻页");
             break;
         }
