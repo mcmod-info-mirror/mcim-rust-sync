@@ -56,11 +56,6 @@ async fn run(cli: &Cli) -> Result<TaskSummary> {
             summary.log("curseforge refresh");
             summary
         }
-        Command::Curseforge(CurseforgeTask::RefreshFull) => {
-            let summary = task::curseforge::refresh_full(&app).await?;
-            summary.log("curseforge refresh-full");
-            summary
-        }
         Command::Curseforge(CurseforgeTask::Search { game_id }) => {
             let mut total = TaskSummary::default();
             for id in game_ids(*game_id) {

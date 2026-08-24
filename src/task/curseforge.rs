@@ -205,34 +205,6 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 全量刷新库内所有 mod
-pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
-    let cf = app.curseforge()?;
-    let local: Vec<ModStamp> = app
-        .db
-        .stream_all(collection::CURSEFORGE_MODS, doc! { "_id": 1 })
-        .await?;
-    let ids: Vec<i32> = local
-        .into_iter()
-        .map(|item| item.id)
-        .filter(|id| *id >= MIN_MOD_ID)
-        .collect();
-    tracing::info!(count = ids.len(), "开始全量刷新");
-
-    let report = cf.sync_mods(&ids).await;
-    let mut summary = TaskSummary {
-        total: report.total(),
-        synced: report.synced.len(),
-        not_found: report.not_found.len(),
-        skipped: report.skipped.len(),
-        failed: report.failed.len(),
-        requeued: 0,
-    };
-    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.to_string()).collect();
-    summary.requeued = requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
-    Ok(summary)
-}
-
 /// 按发布时间倒序翻页，遇到已入库的就停，收集这之前的新 mod
 pub async fn search(app: &App, game_id: i32) -> Result<TaskSummary> {
     let cf = app.curseforge()?;

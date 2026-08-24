@@ -43,9 +43,6 @@ pub enum CurseforgeTask {
     /// 比对 dateModified，只同步有更新的 mod
     Refresh,
 
-    /// 重新同步库内全部 mod
-    RefreshFull,
-
     /// 按发布时间倒序翻页，发现新收录的 mod
     Search {
         /// 只跑指定的 gameId，缺省时两个都跑

@@ -22,11 +22,13 @@ mcim-rust-sync [-c config.json] [-v] <curseforge|modrinth> <任务>
 | --- | --- | --- |
 | `queue` | 消费未命中的 modid / fileid / fingerprint | 消费未命中的 project_id / version_id / hash |
 | `refresh` | 比对 `dateModified` 增量同步 | 比对 `updated` 与版本列表增量同步，并清理已删除的项目 |
-| `refresh-full` | 重新同步库内全部 mod | 重新同步库内全部项目 |
+| `refresh-full` | — | 重新同步库内全部项目 |
 | `search` | 按发布时间倒序发现新 mod | 按最新发布发现新项目 |
 | `categories` / `tags` | 刷新分类 | 刷新 categories、loaders 与 game_versions |
 
 `search` 与 `categories` 默认覆盖 gameId 432 与 78022，可用 `--game-id` 指定其一。
+
+CurseForge 没有 `refresh-full`：生产环境从未真正跑过它，按上游限流跑完 15 万个 mod 需要 28 小时以上，日频调度不可能完成，增量 `refresh` 已覆盖同样的目的。
 
 有条目同步失败时以非零码退出，失败的 id 会被放回 Redis 队列等待下一轮。
 
@@ -57,7 +59,6 @@ mcim-rust-sync [-c config.json] [-v] <curseforge|modrinth> <任务>
 30 */2 * * *  mcim-rust-sync modrinth search
 0 0 * * *     mcim-rust-sync curseforge categories
 0 0 * * *     mcim-rust-sync modrinth tags
-0 2 * * *     mcim-rust-sync curseforge refresh-full
 0 4 * * *     mcim-rust-sync modrinth refresh-full
 ```
 
