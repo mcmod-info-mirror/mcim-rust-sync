@@ -34,6 +34,8 @@ CurseForge 没有 `refresh-full`：生产环境从未真正跑过它，按上游
 
 有条目同步失败时以非零码退出，失败的 id 会被放回 Redis 队列等待下一轮。
 
+建库后先跑一次 `mcim-rust-sync indexes` 建立索引，可重复执行。同步时按 `modId` / `project_id` 清理旧数据，缺索引会退化成全表扫描。
+
 ## 配置
 
 沿用 mcim-sync 的 `config.json`，`job_config`、`interval`、`cron_trigger` 等调度相关的键不再需要，留着也不会报错。

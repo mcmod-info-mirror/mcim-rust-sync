@@ -33,6 +33,9 @@ pub enum Command {
     /// Modrinth 相关任务
     #[command(subcommand)]
     Modrinth(ModrinthTask),
+
+    /// 建立同步与查询所需的 MongoDB 索引，可重复执行
+    Indexes,
 }
 
 #[derive(Debug, Subcommand)]

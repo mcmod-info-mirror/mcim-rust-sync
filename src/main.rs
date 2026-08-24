@@ -74,6 +74,17 @@ async fn run(cli: &Cli) -> Result<TaskSummary> {
             }
             total
         }
+        Command::Indexes => {
+            let created = app.db.ensure_indexes().await?;
+            for name in &created {
+                tracing::info!(index = name, "索引就绪");
+            }
+            TaskSummary {
+                total: created.len(),
+                synced: created.len(),
+                ..Default::default()
+            }
+        }
         Command::Modrinth(ModrinthTask::Queue) => {
             let summary = task::modrinth::sync_queue(&app).await?;
             summary.log("modrinth queue");

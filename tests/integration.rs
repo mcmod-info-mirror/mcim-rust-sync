@@ -255,3 +255,27 @@ async fn requeue_round_trips() {
     queues.push(queue, &["222".to_string()]).await.unwrap();
     assert_eq!(queues.drain(queue).await.unwrap(), vec!["222".to_string()]);
 }
+
+/// 索引必须真的建出来，且可以重复执行
+#[tokio::test]
+async fn ensure_indexes_is_idempotent() {
+    let Some(db) = database("mcim_test_indexes").await else {
+        return;
+    };
+    let first = db.ensure_indexes().await.unwrap();
+    let second = db.ensure_indexes().await.unwrap();
+    assert_eq!(first, second, "重复建索引结果不一致");
+    assert!(first.iter().any(|n| n == "curseforge_files.modId_1"));
+    assert!(first.iter().any(|n| n == "modrinth_files._id.sha1_1"));
+    assert!(first.iter().any(|n| n == "modrinth_files._id.sha512_1"));
+
+    // 同步时按 project_id 删文件，没有这个索引会退化成全表扫描
+    assert!(first.iter().any(|n| n == "modrinth_files.project_id_1"));
+
+    let names: Vec<String> = db
+        .collection::<Document>("modrinth_files")
+        .list_index_names()
+        .await
+        .unwrap();
+    assert!(names.contains(&"_id.sha1_1".to_string()));
+}

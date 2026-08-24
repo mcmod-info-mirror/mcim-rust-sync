@@ -157,6 +157,48 @@ impl Database {
         Ok(result.deleted_count)
     }
 
+    /// 建立本仓库写入、mcim-rust-api 读取所需的索引
+    ///
+    /// Python 版只在模型里声明 index=True 却从不调用建索引，实际靠人工维护。
+    /// 缺了这些索引，同步时按 modId / project_id 的删除会退化成全表扫描
+    pub async fn ensure_indexes(&self) -> Result<Vec<String>> {
+        use mongodb::IndexModel;
+
+        let plan: &[(&str, &str)] = &[
+            // 同步时按 mod 清理旧文件，读侧按 modId 取文件列表
+            ("curseforge_files", "modId"),
+            // 读侧按指纹反查
+            ("curseforge_files", "fileFingerprint"),
+            ("curseforge_categories", "gameId"),
+            // 读侧按 hash 反查版本
+            ("modrinth_files", "_id.sha1"),
+            ("modrinth_files", "_id.sha512"),
+            // 同步时按项目清理旧文件与旧版本
+            ("modrinth_files", "project_id"),
+            ("modrinth_files", "version_id"),
+            ("modrinth_versions", "project_id"),
+        ];
+
+        let mut created = Vec::new();
+        for (collection, field) in plan {
+            let model = IndexModel::builder()
+                .keys(doc! { *field: 1 })
+                .options(
+                    mongodb::options::IndexOptions::builder()
+                        .name(Some(format!("{}_1", field)))
+                        .build(),
+                )
+                .build();
+            let name = self
+                .collection::<Document>(collection)
+                .create_index(model)
+                .await?
+                .index_name;
+            created.push(format!("{}.{}", collection, name));
+        }
+        Ok(created)
+    }
+
     pub async fn count(&self, name: &str) -> Result<u64> {
         Ok(self
             .collection::<Document>(name)
