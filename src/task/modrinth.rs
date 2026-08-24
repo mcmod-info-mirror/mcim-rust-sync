@@ -1,0 +1,277 @@
+use std::collections::{BTreeSet, HashSet};
+
+use bson::doc;
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
+use serde_with::serde_as;
+
+use crate::app::App;
+use crate::constants::MODRINTH_SEARCH_PAGE_SIZE;
+use crate::db::queue::key;
+use crate::error::Result;
+use crate::models::collection;
+use crate::models::{FlexDateTime, modrinth::Project};
+use crate::sync::modrinth::ModrinthSync;
+
+use super::{TaskSummary, requeue};
+
+/// 搜索发现的翻页上限，Python 版没有上界，库为空时会一直翻到上游返回空
+const SEARCH_MAX_PAGES: i64 = 200;
+
+/// 一轮增量刷新里允许删除的项目占比上限
+///
+/// 上游批量接口降级时会让大量存活项目「缺席」，
+/// 没有这个熔断就会被误判成已删除而真的删掉
+const MAX_REMOVE_RATIO: f64 = 0.05;
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+struct ProjectStamp {
+    #[serde(rename = "_id")]
+    id: String,
+    #[serde_as(as = "Option<FlexDateTime>")]
+    #[serde(default)]
+    updated: Option<DateTime<Utc>>,
+    #[serde(default)]
+    versions: Option<Vec<String>>,
+    #[serde(default)]
+    game_versions: Option<Vec<String>>,
+}
+
+fn same_set(left: Option<&Vec<String>>, right: Option<&Vec<String>>) -> bool {
+    // 按集合比较，Python 版按顺序比较，上游重排就会触发一次无意义的重同步
+    let left: HashSet<&String> = left.into_iter().flatten().collect();
+    let right: HashSet<&String> = right.into_iter().flatten().collect();
+    left == right
+}
+
+fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
+    if local.updated != Some(remote.updated) {
+        return true;
+    }
+    if !same_set(local.versions.as_ref(), remote.versions.as_ref()) {
+        return true;
+    }
+    !same_set(local.game_versions.as_ref(), remote.game_versions.as_ref())
+}
+
+fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>) -> TaskSummary {
+    TaskSummary {
+        total: report.total(),
+        synced: report.synced.len(),
+        not_found: report.not_found.len(),
+        skipped: report.skipped.len(),
+        failed: report.failed.len(),
+        requeued: 0,
+    }
+}
+
+/// 消费 Redis 队列：project_ids、version_ids、hashes 都归一成 project_id
+pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
+    let mr = app.modrinth();
+    let chunk = app.config.modrinth_chunk_size;
+    let mut summary = TaskSummary::default();
+    let mut targets: BTreeSet<String> = BTreeSet::new();
+
+    let project_ids = app.queues.drain(key::MODRINTH_PROJECT_IDS).await?;
+    targets.extend(project_ids.iter().cloned());
+
+    let version_ids = app.queues.drain(key::MODRINTH_VERSION_IDS).await?;
+    for batch in version_ids.chunks(chunk.max(1)) {
+        match mr.api().get_versions(batch).await {
+            Ok(versions) => targets.extend(versions.into_iter().map(|v| v.project_id)),
+            Err(error) => {
+                tracing::warn!(%error, count = batch.len(), "批量取版本失败");
+                summary.requeued +=
+                    requeue(&app.queues, key::MODRINTH_VERSION_IDS, batch).await?;
+            }
+        }
+    }
+
+    // Python 版这里遍历的是 sha1 与 sha256，而队列里实际是 sha1 与 sha512，
+    // 于是 sha512 队列从来没被消费过，却每轮都被删掉
+    for algorithm in key::MODRINTH_HASH_ALGORITHMS {
+        let queue_key = key::modrinth_hashes(algorithm);
+        let hashes = app.queues.drain(&queue_key).await?;
+        tracing::info!(algorithm, count = hashes.len(), "取出 hash 队列");
+        for batch in hashes.chunks(chunk.max(1)) {
+            match mr.api().get_version_files(batch, algorithm).await {
+                Ok(found) => targets.extend(found.into_values().map(|v| v.project_id)),
+                Err(error) => {
+                    tracing::warn!(%error, algorithm, count = batch.len(), "批量取 hash 失败");
+                    summary.requeued += requeue(&app.queues, &queue_key, batch).await?;
+                }
+            }
+        }
+    }
+
+    let targets: Vec<String> = targets.into_iter().collect();
+    tracing::info!(count = targets.len(), "开始同步队列命中的项目");
+
+    let report = mr.sync_projects(&targets).await;
+    let requeued = summary.requeued;
+    summary = summarize(&report);
+    summary.requeued = requeued;
+
+    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
+    summary.requeued += requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+
+    Ok(summary)
+}
+
+/// 增量刷新：比对 updated / versions / game_versions，同时清理上游已删除的项目
+pub async fn refresh(app: &App) -> Result<TaskSummary> {
+    let mr = app.modrinth();
+    let chunk = app.config.modrinth_chunk_size;
+
+    let local: Vec<ProjectStamp> = app
+        .db
+        .stream_all(
+            collection::MODRINTH_PROJECTS,
+            doc! { "_id": 1, "updated": 1, "versions": 1, "game_versions": 1 },
+        )
+        .await?;
+    tracing::info!(count = local.len(), "库内项目总数");
+
+    let mut outdated = Vec::new();
+    let mut dead = Vec::new();
+    for batch in local.chunks(chunk.max(1)) {
+        let ids: Vec<String> = batch.iter().map(|item| item.id.clone()).collect();
+        let remote = match mr.api().get_projects(&ids).await {
+            Ok(value) => value,
+            Err(error) => {
+                // 整批失败时不能把它们当成已删除
+                tracing::warn!(%error, count = ids.len(), "批量取项目失败，本批跳过");
+                continue;
+            }
+        };
+
+        let alive: HashSet<&str> = remote.iter().map(|item| item.id.as_str()).collect();
+        for item in batch {
+            if !alive.contains(item.id.as_str()) {
+                dead.push(item.id.clone());
+            }
+        }
+        for value in remote {
+            if let Some(item) = batch.iter().find(|item| item.id == value.id)
+                && is_outdated(item, &value)
+            {
+                outdated.push(value.id);
+            }
+        }
+    }
+
+    let removed = remove_dead(&mr, &dead, local.len()).await?;
+    tracing::info!(count = outdated.len(), removed, "需要刷新的项目");
+
+    let report = mr.sync_projects(&outdated).await;
+    let mut summary = summarize(&report);
+    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
+    summary.requeued = requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+    Ok(summary)
+}
+
+/// 删除上游已消失的项目，超过比例上限时拒绝执行
+async fn remove_dead(mr: &ModrinthSync, dead: &[String], checked: usize) -> Result<usize> {
+    if dead.is_empty() {
+        return Ok(0);
+    }
+    let ratio = dead.len() as f64 / checked.max(1) as f64;
+    if ratio > MAX_REMOVE_RATIO {
+        tracing::error!(
+            dead = dead.len(),
+            checked,
+            ratio = format!("{:.2}%", ratio * 100.0),
+            "判定为已删除的项目占比过高，疑似上游异常，本轮不执行删除"
+        );
+        return Ok(0);
+    }
+
+    let mut removed = 0usize;
+    for project_id in dead {
+        let (projects, versions, files) = mr.remove_project(project_id).await?;
+        tracing::info!(project_id, projects, versions, files, "项目已删除");
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
+    let mr = app.modrinth();
+    let local: Vec<ProjectStamp> = app
+        .db
+        .stream_all(collection::MODRINTH_PROJECTS, doc! { "_id": 1 })
+        .await?;
+    let ids: Vec<String> = local.into_iter().map(|item| item.id).collect();
+    tracing::info!(count = ids.len(), "开始全量刷新");
+
+    let report = mr.sync_projects(&ids).await;
+    let mut summary = summarize(&report);
+    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
+    summary.requeued = requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+    Ok(summary)
+}
+
+/// 按最新发布翻页，遇到已入库的项目就停
+pub async fn search(app: &App) -> Result<TaskSummary> {
+    let mr = app.modrinth();
+    let mut discovered = BTreeSet::new();
+    let mut offset = 0i64;
+
+    for _ in 0..SEARCH_MAX_PAGES {
+        let response = mr.api().search_newest(offset, MODRINTH_SEARCH_PAGE_SIZE).await?;
+        if response.hits.is_empty() {
+            break;
+        }
+
+        let page_ids: Vec<String> = response
+            .hits
+            .iter()
+            .map(|hit| hit.project_id.clone())
+            .collect();
+        let existing = app
+            .db
+            .existing_ids(collection::MODRINTH_PROJECTS, &page_ids)
+            .await?;
+        let existing: HashSet<String> = existing
+            .into_iter()
+            .filter_map(|value| value.as_str().map(str::to_string))
+            .collect();
+
+        let fresh: Vec<String> = page_ids
+            .iter()
+            .filter(|id| !existing.contains(*id))
+            .cloned()
+            .collect();
+        discovered.extend(fresh.iter().cloned());
+
+        if !existing.is_empty() {
+            tracing::debug!(offset, found = fresh.len(), "遇到已入库的项目，停止翻页");
+            break;
+        }
+        offset += MODRINTH_SEARCH_PAGE_SIZE;
+    }
+
+    let targets: Vec<String> = discovered.into_iter().collect();
+    tracing::info!(count = targets.len(), "搜索发现的新项目");
+
+    let report = mr.sync_projects(&targets).await;
+    Ok(summarize(&report))
+}
+
+pub async fn tags(app: &App) -> Result<TaskSummary> {
+    let mr = app.modrinth();
+    let counts = mr.sync_tags().await?;
+    let total = counts.categories + counts.loaders + counts.game_versions;
+    tracing::info!(
+        categories = counts.categories,
+        loaders = counts.loaders,
+        game_versions = counts.game_versions,
+        "tags 同步完成"
+    );
+    Ok(TaskSummary {
+        total,
+        synced: total,
+        ..Default::default()
+    })
+}
