@@ -146,11 +146,16 @@ impl Config {
     ///
     /// 与 Python 版不同，文件不存在时直接报错而不是写出一份默认配置
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = std::fs::read_to_string(path).map_err(|e| {
-            Error::Config(format!("读取 {} 失败: {}", path.display(), e))
-        })?;
-        let mut config: Config = serde_json::from_str(&raw)
-            .map_err(|e| Error::Config(format!("解析 {} 失败: {}", path.display(), e)))?;
+        let raw = std::fs::read_to_string(path)
+            .map_err(|e| Error::Config(format!("读取 {} 失败: {}", path.display(), e)))?;
+        Self::from_json(&raw)
+            .map_err(|e| Error::Config(format!("解析 {} 失败: {}", path.display(), e)))
+    }
+
+    /// 从 JSON 文本构造，缺失的键回落到默认值
+    pub fn from_json(raw: &str) -> Result<Self> {
+        let mut config: Config =
+            serde_json::from_str(raw).map_err(|e| Error::Config(e.to_string()))?;
         config.apply_env();
         Ok(config)
     }

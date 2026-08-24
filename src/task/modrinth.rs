@@ -274,6 +274,10 @@ pub async fn search(app: &App, max_pages: i64, full: bool) -> Result<TaskSummary
             "搜索翻页"
         );
 
+        // 不满一页说明已经是最后一页
+        if (response.hits.len() as i64) < MODRINTH_SEARCH_PAGE_SIZE {
+            break;
+        }
         // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
         if !full && !existing.is_empty() {
             tracing::debug!(offset, "遇到已入库的项目，停止翻页");

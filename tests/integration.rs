@@ -11,7 +11,7 @@ use mcim_rust_sync::db::{Database, Queues};
 use mcim_rust_sync::models::curseforge as cf;
 use mcim_rust_sync::models::modrinth as mr;
 
-/// 测试用配置，库名与队列 key 都带前缀，不碰真实数据
+/// 测试用配置，库名与队列 key 都带前缀，不碰真实数据也不落盘
 fn test_config(database: &str) -> Config {
     let raw = format!(
         r#"{{
@@ -21,9 +21,7 @@ fn test_config(database: &str) -> Config {
         }}"#,
         database
     );
-    let path = std::env::temp_dir().join(format!("mcim-test-{}.json", database));
-    std::fs::write(&path, raw).expect("写测试配置失败");
-    Config::load(&path).expect("加载测试配置失败")
+    Config::from_json(&raw).expect("解析测试配置失败")
 }
 
 async fn database(name: &str) -> Option<Database> {

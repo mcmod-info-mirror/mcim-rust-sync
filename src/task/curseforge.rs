@@ -205,14 +205,19 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 按发布时间倒序翻页，遇到已入库的就停
+/// 按发布时间倒序翻页发现新 mod，每翻一页就同步该页的新条目
 ///
-/// 每翻一页就把这页的新 mod 同步掉，进程中途挂掉也不会丢掉已发现的部分
+/// CurseForge 的搜索接口硬顶 index + pageSize <= 10000，按 class 搜一轮最多只能
+/// 看到一万个。full 模式改成按 category 分片，每个分类各自不到一万条，
+/// 合起来才能覆盖全站
 pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
     let mut summary = TaskSummary::default();
 
-    for class_id in class_ids(game_id) {
+    let slices = search_slices(&cf, game_id, full).await?;
+    tracing::info!(game_id, slices = slices.len(), full, "搜索分片");
+
+    for (position, class_id) in slices.iter().enumerate() {
         let mut index = 0i64;
         let mut pages = 0i64;
         while index + CURSEFORGE_SEARCH_PAGE_SIZE <= CURSEFORGE_SEARCH_LIMIT {
@@ -224,7 +229,8 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
                 .api()
                 .search(game_id, Some(*class_id), index, CURSEFORGE_SEARCH_PAGE_SIZE)
                 .await?;
-            if response.pagination.result_count == 0 {
+            let returned = response.pagination.result_count;
+            if returned == 0 {
                 break;
             }
 
@@ -259,12 +265,17 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
             tracing::info!(
                 game_id,
                 class_id,
+                slice = format!("{}/{}", position + 1, slices.len()),
                 index,
                 fresh = fresh.len(),
                 synced = summary.synced,
                 "搜索翻页"
             );
 
+            // 不满一页说明已经是最后一页
+            if returned < CURSEFORGE_SEARCH_PAGE_SIZE {
+                break;
+            }
             // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
             if !full && !existing.is_empty() {
                 tracing::debug!(class_id, index, "遇到已入库的 mod，停止翻页");
@@ -276,6 +287,26 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
     }
 
     Ok(summary)
+}
+
+/// full 模式按分类分片，否则只按 class 扫一遍
+async fn search_slices(cf: &CurseForgeSync, game_id: i32, full: bool) -> Result<Vec<i32>> {
+    if !full {
+        return Ok(class_ids(game_id).to_vec());
+    }
+    match cf.api().get_categories(game_id, None, false).await {
+        Ok(categories) => {
+            let mut ids: Vec<i32> = categories.iter().map(|item| item.id).collect();
+            ids.extend_from_slice(class_ids(game_id));
+            ids.sort_unstable();
+            ids.dedup();
+            Ok(ids)
+        }
+        Err(error) => {
+            tracing::warn!(%error, game_id, "取分类失败，退回按 class 分片");
+            Ok(class_ids(game_id).to_vec())
+        }
+    }
 }
 
 pub async fn categories(app: &App, game_id: i32) -> Result<TaskSummary> {
