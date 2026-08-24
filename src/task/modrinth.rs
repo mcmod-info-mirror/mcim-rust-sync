@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use bson::doc;
 use chrono::{DateTime, Utc};
@@ -13,7 +13,7 @@ use crate::models::collection;
 use crate::models::{FlexDateTime, modrinth::Project};
 use crate::sync::modrinth::ModrinthSync;
 
-use super::{TaskSummary, requeue};
+use super::{TaskSummary, requeue, same_second};
 
 /// 搜索发现的翻页上限，Python 版没有上界，库为空时会一直翻到上游返回空
 const SEARCH_MAX_PAGES: i64 = 200;
@@ -46,7 +46,7 @@ fn same_set(left: Option<&Vec<String>>, right: Option<&Vec<String>>) -> bool {
 }
 
 fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
-    if local.updated != Some(remote.updated) {
+    if !same_second(local.updated, Some(remote.updated)) {
         return true;
     }
     if !same_set(local.versions.as_ref(), remote.versions.as_ref()) {
@@ -152,11 +152,15 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
                 dead.push(item.id.clone());
             }
         }
-        for value in remote {
-            if let Some(item) = batch.iter().find(|item| item.id == value.id)
-                && is_outdated(item, &value)
+        let local_stamps: HashMap<&str, &ProjectStamp> = batch
+            .iter()
+            .map(|item| (item.id.as_str(), item))
+            .collect();
+        for value in &remote {
+            if let Some(item) = local_stamps.get(value.id.as_str())
+                && is_outdated(item, value)
             {
-                outdated.push(value.id);
+                outdated.push(value.id.clone());
             }
         }
     }
@@ -274,4 +278,72 @@ pub async fn tags(app: &App) -> Result<TaskSummary> {
         synced: total,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProjectStamp, is_outdated, same_set};
+    use crate::models::modrinth::Project;
+
+    fn project(updated: &str, versions: &[&str], game_versions: &[&str]) -> Project {
+        let value = serde_json::json!({
+            "_id": "Wnxd13zP",
+            "slug": "clumps",
+            "team": "team",
+            "published": "2020-01-01T00:00:00Z",
+            "updated": updated,
+            "followers": 1,
+            "versions": versions,
+            "game_versions": game_versions,
+        });
+        serde_json::from_value(value).expect("构造 Project 失败")
+    }
+
+    fn stamp(updated: &str, versions: &[&str], game_versions: &[&str]) -> ProjectStamp {
+        let value = serde_json::json!({
+            "_id": "Wnxd13zP",
+            "updated": updated,
+            "versions": versions,
+            "game_versions": game_versions,
+        });
+        serde_json::from_value(value).expect("构造 ProjectStamp 失败")
+    }
+
+    #[test]
+    fn identical_project_is_not_outdated() {
+        let local = stamp("2026-06-09T23:48:35.117Z", &["a", "b"], &["1.20"]);
+        let remote = project("2026-06-09T23:48:35.117961Z", &["a", "b"], &["1.20"]);
+        assert!(!is_outdated(&local, &remote));
+    }
+
+    #[test]
+    fn newer_updated_is_outdated() {
+        let local = stamp("2026-06-09T23:48:35Z", &["a"], &["1.20"]);
+        let remote = project("2026-06-09T23:49:00Z", &["a"], &["1.20"]);
+        assert!(is_outdated(&local, &remote));
+    }
+
+    #[test]
+    fn new_version_is_outdated() {
+        let local = stamp("2026-06-09T23:48:35Z", &["a"], &["1.20"]);
+        let remote = project("2026-06-09T23:48:35Z", &["a", "b"], &["1.20"]);
+        assert!(is_outdated(&local, &remote));
+    }
+
+    /// 上游把版本列表重排不代表内容有变化
+    #[test]
+    fn reordered_versions_are_not_outdated() {
+        let local = stamp("2026-06-09T23:48:35Z", &["a", "b"], &["1.20", "1.21"]);
+        let remote = project("2026-06-09T23:48:35Z", &["b", "a"], &["1.21", "1.20"]);
+        assert!(!is_outdated(&local, &remote));
+    }
+
+    #[test]
+    fn set_comparison_ignores_order() {
+        let left = vec!["a".to_string(), "b".to_string()];
+        let right = vec!["b".to_string(), "a".to_string()];
+        assert!(same_set(Some(&left), Some(&right)));
+        assert!(same_set(None, None));
+        assert!(!same_set(Some(&left), None));
+    }
 }

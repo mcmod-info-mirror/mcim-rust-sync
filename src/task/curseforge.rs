@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use bson::doc;
 use chrono::{DateTime, Utc};
@@ -16,7 +16,7 @@ use crate::models::collection;
 use crate::models::{FlexDateTime, curseforge::File};
 use crate::sync::curseforge::CurseForgeSync;
 
-use super::{TaskSummary, requeue};
+use super::{TaskSummary, requeue, same_second};
 
 /// 队列里混进过极小的 modid，实际不属于 Minecraft
 const MIN_MOD_ID: i32 = 30000;
@@ -177,12 +177,13 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             continue;
         }
         let remote = cf.api().get_mods(&ids).await?;
+        let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch
+            .iter()
+            .map(|item| (item.id, item.date_modified))
+            .collect();
         for value in remote {
-            let local_stamp = batch
-                .iter()
-                .find(|item| item.id == value.id)
-                .and_then(|item| item.date_modified);
-            if local_stamp != value.date_modified {
+            let local_stamp = local_stamps.get(&value.id).copied().flatten();
+            if !same_second(local_stamp, value.date_modified) {
                 outdated.push(value.id);
             }
         }
@@ -253,9 +254,9 @@ pub async fn search(app: &App, game_id: i32) -> Result<TaskSummary> {
                 .db
                 .existing_ids(collection::CURSEFORGE_MODS, &page_ids)
                 .await?;
-            let existing: Vec<i32> = existing
+            let existing: HashSet<i32> = existing
                 .into_iter()
-                .filter_map(|value| value.as_i32())
+                .filter_map(|value| value.as_i32().or_else(|| value.as_i64().map(|v| v as i32)))
                 .collect();
 
             let fresh: Vec<i32> = page_ids
