@@ -205,14 +205,21 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 按发布时间倒序翻页，遇到已入库的就停，收集这之前的新 mod
-pub async fn search(app: &App, game_id: i32) -> Result<TaskSummary> {
+/// 按发布时间倒序翻页，遇到已入库的就停
+///
+/// 每翻一页就把这页的新 mod 同步掉，进程中途挂掉也不会丢掉已发现的部分
+pub async fn search(app: &App, game_id: i32, max_pages: i64) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
-    let mut discovered = BTreeSet::new();
+    let mut summary = TaskSummary::default();
 
     for class_id in class_ids(game_id) {
         let mut index = 0i64;
+        let mut pages = 0i64;
         while index + CURSEFORGE_SEARCH_PAGE_SIZE <= CURSEFORGE_SEARCH_LIMIT {
+            if max_pages > 0 && pages >= max_pages {
+                tracing::info!(game_id, class_id, pages, "达到翻页上限");
+                break;
+            }
             let response = cf
                 .api()
                 .search(game_id, Some(*class_id), index, CURSEFORGE_SEARCH_PAGE_SIZE)
@@ -234,33 +241,40 @@ pub async fn search(app: &App, game_id: i32) -> Result<TaskSummary> {
             let fresh: Vec<i32> = page_ids
                 .iter()
                 .copied()
-                .filter(|id| !existing.contains(id))
+                .filter(|id| !existing.contains(id) && *id >= MIN_MOD_ID)
                 .collect();
-            discovered.extend(fresh.iter().copied());
+
+            if !fresh.is_empty() {
+                let report = cf.sync_mods(&fresh).await;
+                summary.total += report.total();
+                summary.synced += report.synced.len();
+                summary.not_found += report.not_found.len();
+                summary.skipped += report.skipped.len();
+                summary.failed += report.failed.len();
+                let retry: Vec<String> =
+                    report.failed.iter().map(|(id, _)| id.to_string()).collect();
+                summary.requeued += requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
+            }
+
+            tracing::info!(
+                game_id,
+                class_id,
+                index,
+                fresh = fresh.len(),
+                synced = summary.synced,
+                "搜索翻页"
+            );
 
             if !existing.is_empty() {
-                tracing::debug!(class_id, index, found = fresh.len(), "遇到已入库的 mod，停止翻页");
+                tracing::debug!(class_id, index, "遇到已入库的 mod，停止翻页");
                 break;
             }
             index += CURSEFORGE_SEARCH_PAGE_SIZE;
+            pages += 1;
         }
     }
 
-    let targets: Vec<i32> = discovered
-        .into_iter()
-        .filter(|id| *id >= MIN_MOD_ID)
-        .collect();
-    tracing::info!(game_id, count = targets.len(), "搜索发现的新 mod");
-
-    let report = cf.sync_mods(&targets).await;
-    Ok(TaskSummary {
-        total: report.total(),
-        synced: report.synced.len(),
-        not_found: report.not_found.len(),
-        skipped: report.skipped.len(),
-        failed: report.failed.len(),
-        requeued: 0,
-    })
+    Ok(summary)
 }
 
 pub async fn categories(app: &App, game_id: i32) -> Result<TaskSummary> {

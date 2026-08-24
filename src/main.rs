@@ -56,10 +56,10 @@ async fn run(cli: &Cli) -> Result<TaskSummary> {
             summary.log("curseforge refresh");
             summary
         }
-        Command::Curseforge(CurseforgeTask::Search { game_id }) => {
+        Command::Curseforge(CurseforgeTask::Search { game_id, max_pages }) => {
             let mut total = TaskSummary::default();
             for id in game_ids(*game_id) {
-                let summary = task::curseforge::search(&app, id).await?;
+                let summary = task::curseforge::search(&app, id, *max_pages).await?;
                 summary.log(&format!("curseforge search {}", id));
                 merge(&mut total, summary);
             }
@@ -89,8 +89,8 @@ async fn run(cli: &Cli) -> Result<TaskSummary> {
             summary.log("modrinth refresh-full");
             summary
         }
-        Command::Modrinth(ModrinthTask::Search) => {
-            let summary = task::modrinth::search(&app).await?;
+        Command::Modrinth(ModrinthTask::Search { max_pages }) => {
+            let summary = task::modrinth::search(&app, *max_pages).await?;
             summary.log("modrinth search");
             summary
         }

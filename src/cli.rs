@@ -48,6 +48,10 @@ pub enum CurseforgeTask {
         /// 只跑指定的 gameId，缺省时两个都跑
         #[arg(long)]
         game_id: Option<i32>,
+
+        /// 每个 class 最多翻多少页，0 表示翻到上游给不出结果为止
+        #[arg(long, default_value_t = 0)]
+        max_pages: i64,
     },
 
     /// 刷新分类
@@ -69,7 +73,11 @@ pub enum ModrinthTask {
     RefreshFull,
 
     /// 按最新发布翻页，发现新收录的项目
-    Search,
+    Search {
+        /// 最多翻多少页，0 表示翻到上游给不出结果为止
+        #[arg(long, default_value_t = 0)]
+        max_pages: i64,
+    },
 
     /// 刷新 categories、loaders 与 game_versions
     Tags,

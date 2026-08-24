@@ -15,9 +15,6 @@ use crate::sync::modrinth::ModrinthSync;
 
 use super::{TaskSummary, requeue, same_second};
 
-/// 搜索发现的翻页上限，Python 版没有上界，库为空时会一直翻到上游返回空
-const SEARCH_MAX_PAGES: i64 = 200;
-
 /// 一轮增量刷新里允许删除的项目占比上限
 ///
 /// 上游批量接口降级时会让大量存活项目「缺席」，
@@ -217,13 +214,23 @@ pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
 }
 
 /// 按最新发布翻页，遇到已入库的项目就停
-pub async fn search(app: &App) -> Result<TaskSummary> {
+///
+/// 每翻一页就同步这页的新项目，冷启动跑十几万条时进程中断也不会丢进度
+pub async fn search(app: &App, max_pages: i64) -> Result<TaskSummary> {
     let mr = app.modrinth();
-    let mut discovered = BTreeSet::new();
+    let mut summary = TaskSummary::default();
     let mut offset = 0i64;
+    let mut pages = 0i64;
 
-    for _ in 0..SEARCH_MAX_PAGES {
-        let response = mr.api().search_newest(offset, MODRINTH_SEARCH_PAGE_SIZE).await?;
+    loop {
+        if max_pages > 0 && pages >= max_pages {
+            tracing::info!(pages, "达到翻页上限");
+            break;
+        }
+        let response = mr
+            .api()
+            .search_newest(offset, MODRINTH_SEARCH_PAGE_SIZE)
+            .await?;
         if response.hits.is_empty() {
             break;
         }
@@ -247,20 +254,35 @@ pub async fn search(app: &App) -> Result<TaskSummary> {
             .filter(|id| !existing.contains(*id))
             .cloned()
             .collect();
-        discovered.extend(fresh.iter().cloned());
+
+        if !fresh.is_empty() {
+            let report = mr.sync_projects(&fresh).await;
+            summary.total += report.total();
+            summary.synced += report.synced.len();
+            summary.not_found += report.not_found.len();
+            summary.skipped += report.skipped.len();
+            summary.failed += report.failed.len();
+            let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
+            summary.requeued += requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+        }
+
+        tracing::info!(
+            offset,
+            total_hits = response.total_hits,
+            fresh = fresh.len(),
+            synced = summary.synced,
+            "搜索翻页"
+        );
 
         if !existing.is_empty() {
-            tracing::debug!(offset, found = fresh.len(), "遇到已入库的项目，停止翻页");
+            tracing::debug!(offset, "遇到已入库的项目，停止翻页");
             break;
         }
         offset += MODRINTH_SEARCH_PAGE_SIZE;
+        pages += 1;
     }
 
-    let targets: Vec<String> = discovered.into_iter().collect();
-    tracing::info!(count = targets.len(), "搜索发现的新项目");
-
-    let report = mr.sync_projects(&targets).await;
-    Ok(summarize(&report))
+    Ok(summary)
 }
 
 pub async fn tags(app: &App) -> Result<TaskSummary> {

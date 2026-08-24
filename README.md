@@ -28,6 +28,8 @@ mcim-rust-sync [-c config.json] [-v] <curseforge|modrinth> <任务>
 
 `search` 与 `categories` 默认覆盖 gameId 432 与 78022，可用 `--game-id` 指定其一。
 
+`search` 每翻一页就同步该页发现的新条目，进程中断不会丢掉已同步的部分；`--max-pages` 限制翻页数，缺省 0 表示翻到上游给不出结果为止。
+
 CurseForge 没有 `refresh-full`：生产环境从未真正跑过它，按上游限流跑完 15 万个 mod 需要 28 小时以上，日频调度不可能完成，增量 `refresh` 已覆盖同样的目的。
 
 有条目同步失败时以非零码退出，失败的 id 会被放回 Redis 队列等待下一轮。
