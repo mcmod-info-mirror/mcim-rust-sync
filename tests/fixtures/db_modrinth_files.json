@@ -1,0 +1,56 @@
+[
+ {
+  "_id": {
+   "sha512": "4962062a240a10d1eb3507b28477270d7557a2d3d83ef459f9939a4be32fa8f8fcc92c3eab5125b183f7da11a73cd9f06fb049a8b6cbc276fe3401bbede766de",
+   "sha1": "71029cb859754a0221ffc59639faae96459f1544"
+  },
+  "file_cdn_cached": false,
+  "file_type": null,
+  "filename": "Clumps-neoforge-1.21-18.0.0.1.jar",
+  "found": true,
+  "primary": true,
+  "project_id": "Wnxd13zP",
+  "size": 18383,
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/BBnb9L4J/Clumps-neoforge-1.21-18.0.0.1.jar",
+  "version_id": "BBnb9L4J"
+ },
+ {
+  "_id": {
+   "sha512": "446340da30066b84f0ede64903372c12f9de3d68c7258f6ab063a1372b4ebe8073996add98aedc767db86011e5a33d0dff63600ef1480029710cceabef66b31d",
+   "sha1": "e3062ad0b43d667b85e2a1d3bc3ea2816645f7d1"
+  },
+  "file_cdn_cached": false,
+  "file_type": null,
+  "filename": "Clumps-fabric-1.21-18.0.0.1.jar",
+  "found": true,
+  "primary": true,
+  "project_id": "Wnxd13zP",
+  "size": 20721,
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/U9tSAZs1/Clumps-fabric-1.21-18.0.0.1.jar",
+  "version_id": "U9tSAZs1"
+ },
+ {
+  "_id": {
+   "sha512": "6f380647d530a19db3f17f2019e99beb2f245fe70586959ae95c64b4eaa4185edf3bcad68407f0beac0dc28a954b7af472a8f9b09848745d03aff49c05056f8c",
+   "sha1": "8972c35c94f9d2b77e66aba510cec73c727f6a36"
+  },
+  "file_cdn_cached": false,
+  "file_type": null,
+  "filename": "Clumps-fabric-1.20.6-17.0.0.1.jar",
+  "found": true,
+  "primary": true,
+  "project_id": "Wnxd13zP",
+  "size": 20979,
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/U9UF2NCO/Clumps-fabric-1.20.6-17.0.0.1.jar",
+  "version_id": "U9UF2NCO"
+ }
+]
