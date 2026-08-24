@@ -15,7 +15,10 @@ import subprocess
 import sys
 from collections import defaultdict
 
-# 两边同步时刻不同必然会变的字段，这些只比结构不比值
+# 两边同步时刻不同必然会变的字段，整棵子树都跳过
+#
+# 像 latestFiles / latestFilesIndexes 这种「最新文件」内容随发版变化，
+# 两边同步时刻不同则条目本身就不是同一批，比结构也没有意义
 VOLATILE = {
     "sync_at", "downloadCount", "downloads", "thumbsUpCount", "gamePopularityRank",
     "followers", "dateModified", "updated", "rating", "color", "isAvailable",
@@ -51,24 +54,36 @@ def mongo(database, script):
 def sort_key(item):
     """列表两边顺序可能不同，按稳定标识排序后再比"""
     if isinstance(item, dict):
-        for k in ("id", "_id", "project_id", "name", "version"):
+        for k in ("id", "_id", "fileId", "project_id", "name", "version"):
             if k in item and isinstance(item[k], (str, int)):
                 return (0, str(item[k]))
     return (1, json.dumps(item, sort_keys=True)[:80])
 
 
+def is_error(payload):
+    """两边任意一侧返回错误响应，说明这条只有一边有，不是结构问题"""
+    return isinstance(payload, dict) and "code" in payload and "error" in payload
+
+
 def walk(a, b, path, struct, value, volatile=False):
+    # 可空字段从 null 变成有值（或反之）是取值变化，不是结构不一致
+    if a is None or b is None:
+        if a is not b and not volatile:
+            value.append(f"{path}: {a!r} vs {b!r}")
+        return
     if type(a) is not type(b) and not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
         struct.append(f"{path}: 类型 {type(a).__name__} vs {type(b).__name__}")
         return
     if isinstance(a, dict):
         for k in sorted(set(a) | set(b)):
+            if k in VOLATILE or volatile:
+                continue
             if k not in a:
                 struct.append(f"{path}.{k}: 本地缺失")
             elif k not in b:
                 struct.append(f"{path}.{k}: 生产缺失")
             else:
-                walk(a[k], b[k], f"{path}.{k}", struct, value, volatile or k in VOLATILE)
+                walk(a[k], b[k], f"{path}.{k}", struct, value, volatile)
     elif isinstance(a, list):
         n = min(len(a), len(b))
         if len(a) != len(b):
@@ -80,8 +95,9 @@ def walk(a, b, path, struct, value, volatile=False):
 
 
 def build_targets(database, limit):
-    mods = mongo(database, f"db.curseforge_mods.find({{}},{{_id:1}}).limit({limit}).toArray().map(d=>d._id).join(',')")
-    projects = mongo(database, f"db.modrinth_projects.find({{}},{{_id:1}}).limit({limit}).toArray().map(d=>d._id).join(',')")
+    # 随机取样，按自然顺序取前 N 条只会覆盖最早写入的那批
+    mods = mongo(database, f"db.curseforge_mods.aggregate([{{$sample:{{size:{limit}}}}},{{$project:{{_id:1}}}}]).toArray().map(d=>d._id).join(',')")
+    projects = mongo(database, f"db.modrinth_projects.aggregate([{{$sample:{{size:{limit}}}}},{{$project:{{_id:1}}}}]).toArray().map(d=>d._id).join(',')")
     targets = []
     for m in mods:
         targets.append({"label": f"CF mod {m}", "path": f"/curseforge/v1/mods/{m}", "unwrap": "data"})
@@ -114,6 +130,7 @@ def main():
         return 2
 
     total_struct = total_value = 0
+    only_local = only_prod = 0
     by_field = defaultdict(int)
     print(f"{'端点':<52}{'结构':>7}{'取值':>7}")
     print("-" * 66)
@@ -121,6 +138,17 @@ def main():
         local, prod = fetch(args.local + t["path"], t.get("body")), fetch(args.prod + t["path"], t.get("body"))
         if local is None or prod is None:
             print(f"{t['label']:<52}{'请求失败':>14}")
+            continue
+        # 一侧 404 说明这条只有另一侧有，单独统计而不是当成字段差异
+        if is_error(local) or is_error(prod):
+            if is_error(prod) and not is_error(local):
+                only_local += 1
+                print(f"{t['label']:<52}{'仅本地有':>14}")
+            elif is_error(local) and not is_error(prod):
+                only_prod += 1
+                print(f"{t['label']:<52}{'仅生产有':>14}")
+            else:
+                print(f"{t['label']:<52}{'两边都没有':>13}")
             continue
         if t.get("unwrap"):
             local = local.get(t["unwrap"], local) if isinstance(local, dict) else local
@@ -136,6 +164,7 @@ def main():
             print(f"      结构! {s}")
     print("-" * 66)
     print(f"{'合计':<52}{total_struct:>7}{total_value:>7}")
+    print(f"仅本地有 {only_local} 个端点，仅生产有 {only_prod} 个端点")
     if by_field:
         print("\n结构差异汇总:")
         for k, v in sorted(by_field.items(), key=lambda x: -x[1])[:15]:
