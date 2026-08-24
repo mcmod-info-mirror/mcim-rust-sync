@@ -48,3 +48,36 @@ impl<I, T> Report<I, T> {
         self.synced.len() + self.not_found.len() + self.skipped.len() + self.failed.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Outcome, Report};
+    use crate::error::Error;
+
+    /// 失败的 id 必须能被带回来，Python 版拿不到 id 所以失败项直接丢了
+    #[test]
+    fn failures_keep_their_ids() {
+        let mut report: Report<i32, &str> = Report::default();
+        report.record(1, Ok(Outcome::Synced("ok")));
+        report.record(2, Ok(Outcome::NotFound));
+        report.record(3, Ok(Outcome::Skipped));
+        report.record(4, Err(Error::Config("炸了".to_string())));
+        report.record(5, Err(Error::Config("又炸了".to_string())));
+
+        assert_eq!(report.synced, vec!["ok"]);
+        assert_eq!(report.not_found, vec![2]);
+        assert_eq!(report.skipped, vec![3]);
+        let failed: Vec<i32> = report.failed.iter().map(|(id, _)| *id).collect();
+        assert_eq!(failed, vec![4, 5]);
+        assert_eq!(report.total(), 5);
+    }
+
+    /// 404 与「不收录」不该被放回队列，否则会无限循环
+    #[test]
+    fn only_real_failures_are_worth_requeueing() {
+        let mut report: Report<i32, &str> = Report::default();
+        report.record(7, Ok(Outcome::NotFound));
+        report.record(8, Ok(Outcome::Skipped));
+        assert!(report.failed.is_empty());
+    }
+}

@@ -52,6 +52,14 @@ fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
     !same_set(local.game_versions.as_ref(), remote.game_versions.as_ref())
 }
 
+/// 单轮删除量是否超过熔断阈值
+///
+/// 上游批量接口降级时会让大量存活项目在响应里缺席，
+/// 没有这道闸就会把它们当成已删除而真的删掉
+fn exceeds_remove_limit(dead: usize, checked: usize) -> bool {
+    dead as f64 / checked.max(1) as f64 > MAX_REMOVE_RATIO
+}
+
 fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>) -> TaskSummary {
     TaskSummary {
         total: report.total(),
@@ -177,12 +185,12 @@ async fn remove_dead(mr: &ModrinthSync, dead: &[String], checked: usize) -> Resu
     if dead.is_empty() {
         return Ok(0);
     }
-    let ratio = dead.len() as f64 / checked.max(1) as f64;
-    if ratio > MAX_REMOVE_RATIO {
+    if exceeds_remove_limit(dead.len(), checked) {
         tracing::error!(
             dead = dead.len(),
             checked,
-            ratio = format!("{:.2}%", ratio * 100.0),
+            ratio = format!("{:.2}%", dead.len() as f64 / checked.max(1) as f64 * 100.0),
+            limit = format!("{:.0}%", MAX_REMOVE_RATIO * 100.0),
             "判定为已删除的项目占比过高，疑似上游异常，本轮不执行删除"
         );
         return Ok(0);
@@ -309,7 +317,7 @@ pub async fn tags(app: &App) -> Result<TaskSummary> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectStamp, is_outdated, same_set};
+    use super::{ProjectStamp, exceeds_remove_limit, is_outdated, same_set};
     use crate::models::modrinth::Project;
 
     fn project(updated: &str, versions: &[&str], game_versions: &[&str]) -> Project {
@@ -363,6 +371,27 @@ mod tests {
         let local = stamp("2026-06-09T23:48:35Z", &["a", "b"], &["1.20", "1.21"]);
         let remote = project("2026-06-09T23:48:35Z", &["b", "a"], &["1.21", "1.20"]);
         assert!(!is_outdated(&local, &remote));
+    }
+
+    #[test]
+    fn a_few_dead_projects_are_deleted() {
+        // 正常情况下每轮消失的项目是零星的
+        assert!(!exceeds_remove_limit(0, 70000));
+        assert!(!exceeds_remove_limit(1, 70000));
+        assert!(!exceeds_remove_limit(3000, 70000));
+    }
+
+    #[test]
+    fn a_mass_disappearance_trips_the_breaker() {
+        // 一次批量接口降级能让上百个存活项目缺席，这种必须拦下
+        assert!(exceeds_remove_limit(100, 100));
+        assert!(exceeds_remove_limit(3600, 70000));
+        assert!(exceeds_remove_limit(1, 10));
+    }
+
+    #[test]
+    fn empty_check_set_does_not_divide_by_zero() {
+        assert!(!exceeds_remove_limit(0, 0));
     }
 
     #[test]

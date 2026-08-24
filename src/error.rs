@@ -65,3 +65,52 @@ impl Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+
+    fn response(status: u16) -> Error {
+        Error::ResponseCode {
+            status,
+            method: "GET".to_string(),
+            url: "https://example.invalid".to_string(),
+            body: String::new(),
+        }
+    }
+
+    /// Python 版把 429 归进 ResponseCodeException 又整类排除出重试，
+    /// 结果一撞限速就直接失败
+    #[test]
+    fn rate_limited_is_retryable() {
+        assert!(response(429).is_retryable());
+    }
+
+    #[test]
+    fn server_errors_are_retryable() {
+        assert!(response(500).is_retryable());
+        assert!(response(502).is_retryable());
+        assert!(response(503).is_retryable());
+    }
+
+    #[test]
+    fn client_errors_are_not_retryable() {
+        assert!(!response(400).is_retryable());
+        assert!(!response(403).is_retryable());
+        assert!(!response(404).is_retryable());
+    }
+
+    /// 404 要能和「同步失败」区分开，否则不存在的条目会被反复重试
+    #[test]
+    fn not_found_is_distinguishable() {
+        assert!(response(404).is_not_found());
+        assert!(!response(403).is_not_found());
+        assert!(!response(500).is_not_found());
+        assert!(!Error::Config("x".to_string()).is_not_found());
+    }
+
+    #[test]
+    fn local_errors_are_not_retryable() {
+        assert!(!Error::Config("配置有问题".to_string()).is_retryable());
+    }
+}

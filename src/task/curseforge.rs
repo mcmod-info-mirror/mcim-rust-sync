@@ -319,3 +319,41 @@ pub async fn categories(app: &App, game_id: i32) -> Result<TaskSummary> {
         ..Default::default()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{MIN_MOD_ID, parse_ids};
+
+    /// 队列里混进过非数字的成员，不能因此让整轮任务崩掉
+    #[test]
+    fn unparsable_members_are_separated() {
+        let raw = vec![
+            "946010".to_string(),
+            "".to_string(),
+            "abc".to_string(),
+            "238222".to_string(),
+            "false".to_string(),
+        ];
+        let (ids, invalid) = parse_ids::<i32>(&raw);
+        assert_eq!(ids, vec![946010, 238222]);
+        assert_eq!(invalid, vec!["".to_string(), "abc".to_string(), "false".to_string()]);
+    }
+
+    #[test]
+    fn fingerprints_parse_as_i64() {
+        let raw = vec!["4294967296".to_string(), "1232253386".to_string()];
+        let (ids, invalid) = parse_ids::<i64>(&raw);
+        assert_eq!(ids, vec![4294967296i64, 1232253386i64]);
+        assert!(invalid.is_empty());
+    }
+
+    /// 队列里出现过明显不属于 Minecraft 的极小 modid
+    #[test]
+    fn tiny_ids_are_filtered_out() {
+        let kept: Vec<i32> = [1, 42, 29999, 30000, 946010]
+            .into_iter()
+            .filter(|id| *id >= MIN_MOD_ID)
+            .collect();
+        assert_eq!(kept, vec![30000, 946010]);
+    }
+}
