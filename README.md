@@ -71,3 +71,5 @@ CurseForge 没有 `refresh-full`：生产环境从未真正跑过它，按上游
 模型与 [mcim-model](https://github.com/mcmod-info-mirror/mcim-model) 及 mcim-rust-api 的 entities 逐字段一致，`tests/models.rs` 用两个方向的夹具验证：`db_*` 来自库内既有数据，`api_*` 来自上游响应。
 
 `file_cdn_cached` 是遗留字段，不再写入。
+
+同步完之后可以拿 `scripts/compare-api.py` 验证写入结果：本地起一个 mcim-rust-api 指向同一个库，与 `mod.mcimirror.top` 逐字段比对，只要结构差异为 0 就说明读侧能原样读出来。
