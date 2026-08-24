@@ -70,6 +70,30 @@ struct FingerprintsBody<'a> {
     fingerprints: &'a [i64],
 }
 
+/// 搜索的分片维度
+///
+/// 单个查询最多只能翻到一万条，靠分类切细才能覆盖全站
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchSlice {
+    Class(i32),
+    Category(i32),
+}
+
+impl SearchSlice {
+    pub fn id(&self) -> i32 {
+        match self {
+            SearchSlice::Class(id) | SearchSlice::Category(id) => *id,
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SearchSlice::Class(_) => "class",
+            SearchSlice::Category(_) => "category",
+        }
+    }
+}
+
 pub struct CurseForgeApi {
     http: Arc<HttpClient>,
     base: String,
@@ -154,10 +178,12 @@ impl CurseForgeApi {
         Ok(response.data)
     }
 
+    /// 搜索接口把 classId 与 categoryId 当成两个不同的参数，
+    /// 拿分类 id 去填 classId 会一条都查不到
     pub async fn search(
         &self,
         game_id: i32,
-        class_id: Option<i32>,
+        slice: SearchSlice,
         index: i64,
         page_size: i64,
     ) -> Result<PaginatedResponse<Mod>> {
@@ -169,8 +195,9 @@ impl CurseForgeApi {
             ("sortField", SORT_FIELD_RELEASED_DATE.to_string()),
             ("sortOrder", "desc".to_string()),
         ];
-        if let Some(class_id) = class_id {
-            query.push(("classId", class_id.to_string()));
+        match slice {
+            SearchSlice::Class(id) => query.push(("classId", id.to_string())),
+            SearchSlice::Category(id) => query.push(("categoryId", id.to_string())),
         }
         self.http.get(&url, &query, &self.headers).await
     }
@@ -195,4 +222,19 @@ pub fn matched_fingerprints(result: &FingerprintResult) -> HashMap<i64, i32> {
         .iter()
         .map(|item| (item.id, item.file.mod_id))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SearchSlice;
+
+    /// class 与 category 是搜索接口的两个不同参数，拿分类 id 去填 classId 会一条都查不到
+    #[test]
+    fn slice_carries_its_kind() {
+        assert_eq!(SearchSlice::Class(6).kind(), "class");
+        assert_eq!(SearchSlice::Category(424).kind(), "category");
+        assert_eq!(SearchSlice::Class(6).id(), 6);
+        assert_eq!(SearchSlice::Category(424).id(), 424);
+        assert_ne!(SearchSlice::Class(424), SearchSlice::Category(424));
+    }
 }

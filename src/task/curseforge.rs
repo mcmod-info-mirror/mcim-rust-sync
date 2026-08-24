@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_with::serde_as;
 
-use crate::api::curseforge::fingerprint_mod_ids;
+use crate::api::curseforge::{SearchSlice, fingerprint_mod_ids};
 use crate::app::App;
 use crate::constants::{
     CURSEFORGE_SEARCH_LIMIT, CURSEFORGE_SEARCH_PAGE_SIZE, class_ids,
@@ -217,17 +217,17 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
     let slices = search_slices(&cf, game_id, full).await?;
     tracing::info!(game_id, slices = slices.len(), full, "搜索分片");
 
-    for (position, class_id) in slices.iter().enumerate() {
+    for (position, slice) in slices.iter().enumerate() {
         let mut index = 0i64;
         let mut pages = 0i64;
         while index + CURSEFORGE_SEARCH_PAGE_SIZE <= CURSEFORGE_SEARCH_LIMIT {
             if max_pages > 0 && pages >= max_pages {
-                tracing::info!(game_id, class_id, pages, "达到翻页上限");
+                tracing::info!(game_id, slice = slice.id(), pages, "达到翻页上限");
                 break;
             }
             let response = cf
                 .api()
-                .search(game_id, Some(*class_id), index, CURSEFORGE_SEARCH_PAGE_SIZE)
+                .search(game_id, *slice, index, CURSEFORGE_SEARCH_PAGE_SIZE)
                 .await?;
             let returned = response.pagination.result_count;
             if returned == 0 {
@@ -264,8 +264,9 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
 
             tracing::info!(
                 game_id,
-                class_id,
-                slice = format!("{}/{}", position + 1, slices.len()),
+                kind = slice.kind(),
+                id = slice.id(),
+                progress = format!("{}/{}", position + 1, slices.len()),
                 index,
                 fresh = fresh.len(),
                 synced = summary.synced,
@@ -278,7 +279,7 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
             }
             // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
             if !full && !existing.is_empty() {
-                tracing::debug!(class_id, index, "遇到已入库的 mod，停止翻页");
+                tracing::debug!(slice = slice.id(), index, "遇到已入库的 mod，停止翻页");
                 break;
             }
             index += CURSEFORGE_SEARCH_PAGE_SIZE;
@@ -289,22 +290,33 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
     Ok(summary)
 }
 
-/// full 模式按分类分片，否则只按 class 扫一遍
-async fn search_slices(cf: &CurseForgeSync, game_id: i32, full: bool) -> Result<Vec<i32>> {
+/// full 模式先扫 class 再按分类补，否则只扫 class
+///
+/// class 先跑能最快铺开覆盖面，分类切片再补 class 查询撞到一万条上限时够不到的部分
+async fn search_slices(cf: &CurseForgeSync, game_id: i32, full: bool) -> Result<Vec<SearchSlice>> {
+    let classes: Vec<SearchSlice> = class_ids(game_id)
+        .iter()
+        .map(|id| SearchSlice::Class(*id))
+        .collect();
     if !full {
-        return Ok(class_ids(game_id).to_vec());
+        return Ok(classes);
     }
     match cf.api().get_categories(game_id, None, false).await {
         Ok(categories) => {
-            let mut ids: Vec<i32> = categories.iter().map(|item| item.id).collect();
-            ids.extend_from_slice(class_ids(game_id));
-            ids.sort_unstable();
-            ids.dedup();
-            Ok(ids)
+            let known: Vec<i32> = class_ids(game_id).to_vec();
+            let mut slices = classes;
+            slices.extend(
+                categories
+                    .iter()
+                    .map(|item| item.id)
+                    .filter(|id| !known.contains(id))
+                    .map(SearchSlice::Category),
+            );
+            Ok(slices)
         }
         Err(error) => {
-            tracing::warn!(%error, game_id, "取分类失败，退回按 class 分片");
-            Ok(class_ids(game_id).to_vec())
+            tracing::warn!(%error, game_id, "取分类失败，退回只按 class 分片");
+            Ok(classes)
         }
     }
 }

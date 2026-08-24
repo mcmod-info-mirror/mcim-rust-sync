@@ -4,7 +4,8 @@
 
 use std::sync::Arc;
 
-use mcim_rust_sync::api::ModrinthApi;
+use mcim_rust_sync::api::curseforge::SearchSlice;
+use mcim_rust_sync::api::{CurseForgeApi, ModrinthApi};
 use mcim_rust_sync::config::Config;
 use mcim_rust_sync::http::HttpClient;
 
@@ -80,4 +81,40 @@ async fn search_newest() {
     let response = api.search_newest(0, 10).await.expect("搜索失败");
     assert_eq!(response.hits.len(), 10);
     assert!(response.total_hits > 0);
+}
+
+/// CurseForge 的搜索接口把 classId 与 categoryId 当成两个参数
+///
+/// 分类 id 填进 classId 会返回空，按 class 分片就只能覆盖每个 class 的前一万条。
+/// 需要 MCIM_CURSEFORGE_API_KEY，没配就跳过
+#[tokio::test]
+#[ignore = "需要联网与 CurseForge API Key"]
+async fn category_and_class_are_different_parameters() {
+    let Ok(key) = std::env::var("MCIM_CURSEFORGE_API_KEY") else {
+        eprintln!("跳过：未配置 MCIM_CURSEFORGE_API_KEY");
+        return;
+    };
+    let mut config = config();
+    config.curseforge_api_key = key;
+    let http = Arc::new(HttpClient::new(&config).expect("构造 HTTP 客户端失败"));
+    let api = CurseForgeApi::new(http, &config).expect("构造 CurseForge 客户端失败");
+
+    // 424 是 class 6 (Mods) 底下的一个分类
+    let as_category = api
+        .search(432, SearchSlice::Category(424), 0, 5)
+        .await
+        .expect("按分类搜索失败");
+    assert!(
+        as_category.pagination.result_count > 0,
+        "按 categoryId 搜索应当有结果"
+    );
+
+    let as_class = api
+        .search(432, SearchSlice::Class(424), 0, 5)
+        .await
+        .expect("按 class 搜索失败");
+    assert_eq!(
+        as_class.pagination.result_count, 0,
+        "分类 id 当作 classId 用应当查不到东西，这正是必须区分两者的原因"
+    );
 }
