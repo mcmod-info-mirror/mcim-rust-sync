@@ -9,6 +9,11 @@ use mcim_rust_sync::config::Config;
 use mcim_rust_sync::error::Result;
 use mcim_rust_sync::task::{self, TaskSummary};
 
+/// 跑完了，但有个别条目没同步成功
+const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
+/// 任务整体失败，没跑完
+const EXIT_ERROR: u8 = 2;
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -19,14 +24,15 @@ async fn main() -> ExitCode {
             if summary.is_clean() {
                 ExitCode::SUCCESS
             } else {
-                // 有条目失败时以非零码退出，方便外部调度感知
+                // 跑完了但有个别条目失败，与整体出错要分开，
+                // 否则外部看护脚本无法判断该重试还是该收工
                 tracing::warn!(failed = summary.failed, "任务完成但存在失败条目");
-                ExitCode::FAILURE
+                ExitCode::from(EXIT_COMPLETED_WITH_FAILURES)
             }
         }
         Err(error) => {
             tracing::error!(%error, "任务执行失败");
-            ExitCode::FAILURE
+            ExitCode::from(EXIT_ERROR)
         }
     }
 }
