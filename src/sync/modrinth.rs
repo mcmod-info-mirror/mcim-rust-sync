@@ -58,7 +58,15 @@ impl ModrinthSync {
 
         // 项目自己声明的版本数，用来判断空响应是真的没版本还是响应不完整
         let declared = project.versions.as_ref().map_or(0, Vec::len);
-        let version_count = self.sync_project_versions(project_id, declared).await?;
+        let version_count = match self.sync_project_versions(project_id, declared).await {
+            Ok(count) => count,
+            // 取完项目再取版本，这中间项目可能已经被删了，这种不该重试
+            Err(e) if e.is_not_found() => {
+                tracing::info!(project_id, "项目在两次请求之间消失了");
+                return Ok(Outcome::NotFound);
+            }
+            Err(e) => return Err(e),
+        };
 
         self.sync_translation(project_id, project.description.as_deref())
             .await?;

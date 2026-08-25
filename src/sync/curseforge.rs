@@ -62,7 +62,15 @@ impl CurseForgeSync {
             return Ok(Outcome::Skipped);
         }
 
-        let files = self.fetch_all_files(mod_id).await?;
+        let files = match self.fetch_all_files(mod_id).await {
+            Ok(files) => files,
+            // 取完 mod 再取文件列表，这中间 mod 可能已经被删了，这种不该重试
+            Err(e) if e.is_not_found() => {
+                tracing::info!(mod_id, "mod 在两次请求之间消失了");
+                return Ok(Outcome::NotFound);
+            }
+            Err(e) => return Err(e),
+        };
         let file_count = files.len();
         self.db
             .upsert_many(collection::CURSEFORGE_FILES, &files, self.concurrency)
