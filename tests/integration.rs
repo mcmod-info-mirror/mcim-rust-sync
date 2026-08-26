@@ -9,7 +9,9 @@ use mcim_rust_sync::config::Config;
 use mcim_rust_sync::db::queue::key;
 use mcim_rust_sync::db::{Database, Queues};
 use mcim_rust_sync::models::curseforge as cf;
+use mcim_rust_sync::models::collection;
 use mcim_rust_sync::models::modrinth as mr;
+use mcim_rust_sync::models::translate::ModrinthTranslation;
 
 /// 测试用配置，库名与队列 key 都带前缀，不碰真实数据也不落盘
 fn test_config(database: &str) -> Config {
@@ -276,4 +278,62 @@ async fn ensure_indexes_is_idempotent() {
         .await
         .unwrap();
     assert!(names.contains(&"_id.sha1_1".to_string()));
+}
+
+/// 删除项目要连翻译记录一起清掉，否则 mcim-translate 会一直处理已经不存在的项目
+#[tokio::test]
+async fn removing_a_project_clears_its_translation() {
+    let Some(db) = database("mcim_test_remove").await else {
+        return;
+    };
+    for name in [
+        collection::MODRINTH_PROJECTS,
+        collection::MODRINTH_VERSIONS,
+        collection::MODRINTH_FILES,
+        collection::MODRINTH_TRANSLATED,
+    ] {
+        db.delete_many(name, doc! {}).await.unwrap();
+    }
+
+    let projects: Vec<mr::Project> = load("db_modrinth_projects.json");
+    let versions: Vec<mr::Version> = load("db_modrinth_versions.json");
+    let files: Vec<mr::File> = load("db_modrinth_files.json");
+    let target = projects[0].id.clone();
+
+    db.upsert_many(collection::MODRINTH_PROJECTS, &projects, 4).await.unwrap();
+    db.upsert_many(collection::MODRINTH_VERSIONS, &versions, 4).await.unwrap();
+    db.upsert_many(collection::MODRINTH_FILES, &files, 4).await.unwrap();
+    let translation = ModrinthTranslation {
+        project_id: target.clone(),
+        translated: Some("译文".to_string()),
+        original: Some("original".to_string()),
+        need_to_update: false,
+        translated_at: None,
+    };
+    db.upsert_many(collection::MODRINTH_TRANSLATED, &[translation], 1).await.unwrap();
+    assert_eq!(db.count(collection::MODRINTH_TRANSLATED).await.unwrap(), 1);
+
+    // 直接走删除路径用到的那几条语句
+    db.delete_many(collection::MODRINTH_FILES, doc! { "project_id": &target }).await.unwrap();
+    db.delete_many(collection::MODRINTH_VERSIONS, doc! { "project_id": &target }).await.unwrap();
+    db.delete_by_id(collection::MODRINTH_TRANSLATED, &target).await.unwrap();
+    db.delete_by_id(collection::MODRINTH_PROJECTS, &target).await.unwrap();
+
+    assert_eq!(db.count(collection::MODRINTH_TRANSLATED).await.unwrap(), 0, "翻译记录没被清掉");
+    assert_eq!(
+        db.collection::<Document>(collection::MODRINTH_PROJECTS)
+            .count_documents(doc! { "_id": &target })
+            .await
+            .unwrap(),
+        0
+    );
+
+    for name in [
+        collection::MODRINTH_PROJECTS,
+        collection::MODRINTH_VERSIONS,
+        collection::MODRINTH_FILES,
+        collection::MODRINTH_TRANSLATED,
+    ] {
+        db.delete_many(name, doc! {}).await.unwrap();
+    }
 }

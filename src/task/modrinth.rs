@@ -198,8 +198,15 @@ async fn remove_dead(mr: &ModrinthSync, dead: &[String], checked: usize) -> Resu
 
     let mut removed = 0usize;
     for project_id in dead {
-        let (projects, versions, files) = mr.remove_project(project_id).await?;
-        tracing::info!(project_id, projects, versions, files, "项目已删除");
+        let counts = mr.remove_project(project_id).await?;
+        tracing::info!(
+            project_id,
+            projects = counts.projects,
+            versions = counts.versions,
+            files = counts.files,
+            translations = counts.translations,
+            "项目已删除"
+        );
         removed += 1;
     }
     Ok(removed)

@@ -18,6 +18,15 @@ pub struct ProjectSummary {
     pub version_count: usize,
 }
 
+/// 删除一个项目时各集合实际删掉的条数
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RemovedCounts {
+    pub projects: u64,
+    pub versions: u64,
+    pub files: u64,
+    pub translations: u64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TagCounts {
     pub categories: usize,
@@ -227,11 +236,11 @@ impl ModrinthSync {
         })
     }
 
-    /// 删除上游已经消失的项目，连同它的版本与文件
+    /// 删除上游已经消失的项目，连同它的版本、文件与翻译记录
     ///
     /// Python 版这里删的是 `modrinth_hashes` 集合，而真实集合叫 `modrinth_files`，
-    /// 所以文件文档从来没被删掉过，一直在库里变成孤儿数据
-    pub async fn remove_project(&self, project_id: &str) -> Result<(u64, u64, u64)> {
+    /// 所以文件文档从来没被删掉过；翻译记录同样没删，会一直堆积
+    pub async fn remove_project(&self, project_id: &str) -> Result<RemovedCounts> {
         let files = self
             .db
             .delete_many(
@@ -246,11 +255,20 @@ impl ModrinthSync {
                 doc! { "project_id": project_id },
             )
             .await?;
+        let translations = self
+            .db
+            .delete_by_id(collection::MODRINTH_TRANSLATED, &project_id)
+            .await?;
         let projects = self
             .db
             .delete_by_id(collection::MODRINTH_PROJECTS, &project_id)
             .await?;
-        Ok((projects, versions, files))
+        Ok(RemovedCounts {
+            projects,
+            versions,
+            files,
+            translations,
+        })
     }
 }
 

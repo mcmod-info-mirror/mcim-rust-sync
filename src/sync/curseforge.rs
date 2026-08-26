@@ -13,6 +13,14 @@ use crate::models::translate::CurseForgeTranslation;
 
 use super::{Outcome, Report};
 
+/// 删除一个 mod 时各集合实际删掉的条数
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RemovedCounts {
+    pub mods: u64,
+    pub files: u64,
+    pub translations: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModSummary {
     pub id: i32,
@@ -215,19 +223,27 @@ impl CurseForgeSync {
         Ok(categories)
     }
 
-    /// 上游已删除的 mod，连同它的文件一起清掉
+    /// 上游已删除的 mod，连同它的文件与翻译记录一起清掉
     ///
     /// Python 版在 CurseForge 侧完全没有这条路径，404 的 mod 会永远留在库里
-    pub async fn remove_mod(&self, mod_id: i32) -> Result<(u64, u64)> {
+    pub async fn remove_mod(&self, mod_id: i32) -> Result<RemovedCounts> {
         let files = self
             .db
             .delete_many(collection::CURSEFORGE_FILES, doc! { "modId": mod_id })
+            .await?;
+        let translations = self
+            .db
+            .delete_by_id(collection::CURSEFORGE_TRANSLATED, &mod_id)
             .await?;
         let mods = self
             .db
             .delete_by_id(collection::CURSEFORGE_MODS, &mod_id)
             .await?;
-        Ok((mods, files))
+        Ok(RemovedCounts {
+            mods,
+            files,
+            translations,
+        })
     }
 }
 
