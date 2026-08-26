@@ -30,7 +30,9 @@ mcim-rust-sync [-c config.json] [-v] <curseforge|modrinth> <任务>
 
 `search` 每翻一页就同步该页发现的新条目，进程中断不会丢掉已同步的部分；`--max-pages` 限制翻页数，缺省 0 表示翻到上游给不出结果为止。空库冷启动时加 `--full`，遇到已入库的条目也继续翻，中断后重跑能接着补。
 
-CurseForge 没有 `refresh-full`：生产环境从未真正跑过它，按上游限流跑完 15 万个 mod 需要 28 小时以上，日频调度不可能完成，增量 `refresh` 已覆盖同样的目的。
+CurseForge 的搜索接口硬顶 `index + pageSize <= 10000`，按 class 搜一轮每类最多只能看到一万条。`--full` 会先扫完各个 class，再按分类逐个补上 class 查询够不到的部分。注意 `classId` 与 `categoryId` 是两个不同的查询参数，拿分类 id 去填 `classId` 一条都查不到。
+
+CurseForge 没有 `refresh-full`：生产环境从未真正跑过它（采样库内 mod 的 `sync_at`，时间散布在数十天里，日频全量刷新的话应当全在 24 小时内），而库里有三十余万个 mod，按上游限流跑一轮要几十小时，日频调度不可能完成，增量 `refresh` 已覆盖同样的目的。
 
 退出码：`0` 干净跑完，`1` 跑完但有个别条目没同步成功，`2` 整体出错没跑完。失败的 id 会被放回 Redis 队列等待下一轮。
 
