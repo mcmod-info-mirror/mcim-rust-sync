@@ -178,6 +178,8 @@ impl CurseForgeApi {
         Ok(response.data)
     }
 
+    /// 按发布时间排序搜索
+    ///
     /// 搜索接口把 classId 与 categoryId 当成两个不同的参数，
     /// 拿分类 id 去填 classId 会一条都查不到
     pub async fn search(
@@ -186,6 +188,7 @@ impl CurseForgeApi {
         slice: SearchSlice,
         index: i64,
         page_size: i64,
+        descending: bool,
     ) -> Result<PaginatedResponse<Mod>> {
         let url = format!("{}/v1/mods/search", self.base);
         let mut query = vec![
@@ -193,7 +196,10 @@ impl CurseForgeApi {
             ("index", index.to_string()),
             ("pageSize", page_size.to_string()),
             ("sortField", SORT_FIELD_RELEASED_DATE.to_string()),
-            ("sortOrder", "desc".to_string()),
+            (
+                "sortOrder",
+                if descending { "desc" } else { "asc" }.to_string(),
+            ),
         ];
         match slice {
             SearchSlice::Class(id) => query.push(("classId", id.to_string())),

@@ -7,9 +7,7 @@ use serde_with::serde_as;
 
 use crate::api::curseforge::{SearchSlice, fingerprint_mod_ids};
 use crate::app::App;
-use crate::constants::{
-    CURSEFORGE_SEARCH_LIMIT, CURSEFORGE_SEARCH_PAGE_SIZE, class_ids,
-};
+use crate::constants::{CURSEFORGE_SEARCH_LIMIT, CURSEFORGE_SEARCH_PAGE_SIZE, class_ids};
 use crate::db::queue::key;
 use crate::error::Result;
 use crate::models::collection;
@@ -82,11 +80,7 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     summary.failed = report.failed.len();
 
     // 只有真正失败的才放回，404 与不收录的直接丢弃，避免无限循环
-    let retry: Vec<String> = report
-        .failed
-        .iter()
-        .map(|(id, _)| id.to_string())
-        .collect();
+    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.to_string()).collect();
     summary.requeued += requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
 
     Ok(summary)
@@ -205,85 +199,100 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 按发布时间倒序翻页发现新 mod，每翻一页就同步该页的新条目
+/// 按发布时间倒序翻页，第一时间捕获新发布的 mod
 ///
-/// CurseForge 的搜索接口硬顶 index + pageSize <= 10000，按 class 搜一轮最多只能
-/// 看到一万个。full 模式改成按 category 分片，每个分类各自不到一万条，
-/// 合起来才能覆盖全站
+/// 常规用法是一直翻到不再出现新条目为止。full 模式是冷启动时的附带用法：
+/// 不因遇到已入库的条目而停，把能翻到的都过一遍。
+///
+/// 搜索接口硬顶 index + pageSize <= 10000，单次查询最多只能看到一万条，
+/// 所以 full 模式还会按分类分片，并且正反两个方向各扫一遍
 pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
     let mut summary = TaskSummary::default();
 
     let slices = search_slices(&cf, game_id, full).await?;
+    // 正序返回的是同一分片里最旧的一万条，与倒序不相交，等于把可达量翻倍。
+    // 增量发现只要倒序，从最旧的开始扫第一页就全是已入库的，没有意义
+    let orders: &[bool] = if full { &[true, false] } else { &[true] };
     tracing::info!(game_id, slices = slices.len(), full, "搜索分片");
 
-    for (position, slice) in slices.iter().enumerate() {
-        let mut index = 0i64;
-        let mut pages = 0i64;
-        while index + CURSEFORGE_SEARCH_PAGE_SIZE <= CURSEFORGE_SEARCH_LIMIT {
-            if max_pages > 0 && pages >= max_pages {
-                tracing::info!(game_id, slice = slice.id(), pages, "达到翻页上限");
-                break;
-            }
-            let response = cf
-                .api()
-                .search(game_id, *slice, index, CURSEFORGE_SEARCH_PAGE_SIZE)
-                .await?;
-            let returned = response.pagination.result_count;
-            if returned == 0 {
-                break;
-            }
+    for &descending in orders {
+        for (position, slice) in slices.iter().enumerate() {
+            let mut index = 0i64;
+            let mut pages = 0i64;
+            while index + CURSEFORGE_SEARCH_PAGE_SIZE <= CURSEFORGE_SEARCH_LIMIT {
+                if max_pages > 0 && pages >= max_pages {
+                    tracing::info!(game_id, slice = slice.id(), pages, "达到翻页上限");
+                    break;
+                }
+                let response = cf
+                    .api()
+                    .search(
+                        game_id,
+                        *slice,
+                        index,
+                        CURSEFORGE_SEARCH_PAGE_SIZE,
+                        descending,
+                    )
+                    .await?;
+                let returned = response.pagination.result_count;
+                if returned == 0 {
+                    break;
+                }
 
-            let page_ids: Vec<i32> = response.data.iter().map(|value| value.id).collect();
-            let existing = app
-                .db
-                .existing_ids(collection::CURSEFORGE_MODS, &page_ids)
-                .await?;
-            let existing: HashSet<i32> = existing
-                .into_iter()
-                .filter_map(|value| value.as_i32().or_else(|| value.as_i64().map(|v| v as i32)))
-                .collect();
+                let page_ids: Vec<i32> = response.data.iter().map(|value| value.id).collect();
+                let existing = app
+                    .db
+                    .existing_ids(collection::CURSEFORGE_MODS, &page_ids)
+                    .await?;
+                let existing: HashSet<i32> = existing
+                    .into_iter()
+                    .filter_map(|value| value.as_i32().or_else(|| value.as_i64().map(|v| v as i32)))
+                    .collect();
 
-            let fresh: Vec<i32> = page_ids
-                .iter()
-                .copied()
-                .filter(|id| !existing.contains(id) && *id >= MIN_MOD_ID)
-                .collect();
+                let fresh: Vec<i32> = page_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| !existing.contains(id) && *id >= MIN_MOD_ID)
+                    .collect();
 
-            if !fresh.is_empty() {
-                let report = cf.sync_mods(&fresh).await;
-                summary.total += report.total();
-                summary.synced += report.synced.len();
-                summary.not_found += report.not_found.len();
-                summary.skipped += report.skipped.len();
-                summary.failed += report.failed.len();
-                let retry: Vec<String> =
-                    report.failed.iter().map(|(id, _)| id.to_string()).collect();
-                summary.requeued += requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
+                if !fresh.is_empty() {
+                    let report = cf.sync_mods(&fresh).await;
+                    summary.total += report.total();
+                    summary.synced += report.synced.len();
+                    summary.not_found += report.not_found.len();
+                    summary.skipped += report.skipped.len();
+                    summary.failed += report.failed.len();
+                    let retry: Vec<String> =
+                        report.failed.iter().map(|(id, _)| id.to_string()).collect();
+                    summary.requeued +=
+                        requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
+                }
+
+                tracing::info!(
+                    game_id,
+                    kind = slice.kind(),
+                    id = slice.id(),
+                    order = if descending { "desc" } else { "asc" },
+                    progress = format!("{}/{}", position + 1, slices.len()),
+                    index,
+                    fresh = fresh.len(),
+                    synced = summary.synced,
+                    "搜索翻页"
+                );
+
+                // 不满一页说明已经是最后一页
+                if returned < CURSEFORGE_SEARCH_PAGE_SIZE {
+                    break;
+                }
+                // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
+                if !full && !existing.is_empty() {
+                    tracing::debug!(slice = slice.id(), index, "遇到已入库的 mod，停止翻页");
+                    break;
+                }
+                index += CURSEFORGE_SEARCH_PAGE_SIZE;
+                pages += 1;
             }
-
-            tracing::info!(
-                game_id,
-                kind = slice.kind(),
-                id = slice.id(),
-                progress = format!("{}/{}", position + 1, slices.len()),
-                index,
-                fresh = fresh.len(),
-                synced = summary.synced,
-                "搜索翻页"
-            );
-
-            // 不满一页说明已经是最后一页
-            if returned < CURSEFORGE_SEARCH_PAGE_SIZE {
-                break;
-            }
-            // full 模式下不提前停，冷启动中断后重跑才能补上剩下的
-            if !full && !existing.is_empty() {
-                tracing::debug!(slice = slice.id(), index, "遇到已入库的 mod，停止翻页");
-                break;
-            }
-            index += CURSEFORGE_SEARCH_PAGE_SIZE;
-            pages += 1;
         }
     }
 
@@ -348,7 +357,10 @@ mod tests {
         ];
         let (ids, invalid) = parse_ids::<i32>(&raw);
         assert_eq!(ids, vec![946010, 238222]);
-        assert_eq!(invalid, vec!["".to_string(), "abc".to_string(), "false".to_string()]);
+        assert_eq!(
+            invalid,
+            vec!["".to_string(), "abc".to_string(), "false".to_string()]
+        );
     }
 
     #[test]

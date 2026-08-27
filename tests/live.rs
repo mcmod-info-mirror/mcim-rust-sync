@@ -101,7 +101,7 @@ async fn category_and_class_are_different_parameters() {
 
     // 424 是 class 6 (Mods) 底下的一个分类
     let as_category = api
-        .search(432, SearchSlice::Category(424), 0, 5)
+        .search(432, SearchSlice::Category(424), 0, 5, true)
         .await
         .expect("按分类搜索失败");
     assert!(
@@ -110,11 +110,52 @@ async fn category_and_class_are_different_parameters() {
     );
 
     let as_class = api
-        .search(432, SearchSlice::Class(424), 0, 5)
+        .search(432, SearchSlice::Class(424), 0, 5, true)
         .await
         .expect("按 class 搜索失败");
     assert_eq!(
         as_class.pagination.result_count, 0,
         "分类 id 当作 classId 用应当查不到东西，这正是必须区分两者的原因"
     );
+}
+
+/// 同一个分片正反排序返回的是不相交的两批
+///
+/// 搜索接口单次查询硬顶一万条，倒序给的是最新的一万条、正序给的是最旧的一万条，
+/// 冷启动时两个方向各扫一遍才能把分片的可达量翻倍
+#[tokio::test]
+#[ignore = "需要联网与 CurseForge API Key"]
+async fn both_sort_orders_return_disjoint_sets() {
+    let Ok(key) = std::env::var("MCIM_CURSEFORGE_API_KEY") else {
+        eprintln!("跳过：未配置 MCIM_CURSEFORGE_API_KEY");
+        return;
+    };
+    let mut config = config();
+    config.curseforge_api_key = key;
+    let http = Arc::new(HttpClient::new(&config).expect("构造 HTTP 客户端失败"));
+    let api = CurseForgeApi::new(http, &config).expect("构造 CurseForge 客户端失败");
+
+    // classId 6 是 Mods，条目数远超一万，两个方向都会被截断
+    let newest = api
+        .search(432, SearchSlice::Class(6), 0, 20, true)
+        .await
+        .expect("倒序搜索失败");
+    let oldest = api
+        .search(432, SearchSlice::Class(6), 0, 20, false)
+        .await
+        .expect("正序搜索失败");
+
+    let newest_ids: std::collections::HashSet<i32> =
+        newest.data.iter().map(|item| item.id).collect();
+    let oldest_ids: std::collections::HashSet<i32> =
+        oldest.data.iter().map(|item| item.id).collect();
+
+    assert_eq!(newest_ids.len(), 20);
+    assert_eq!(oldest_ids.len(), 20);
+    assert!(
+        newest_ids.is_disjoint(&oldest_ids),
+        "两个方向应当返回不相交的条目，否则反向扫描没有意义"
+    );
+    // 两边都被截断在一万，所以 totalCount 相同却指向不同的一批
+    assert_eq!(newest.pagination.total_count, oldest.pagination.total_count);
 }
