@@ -69,25 +69,46 @@ def counts(database):
     return local
 
 
+# 生产镜像的批量接口有两个上限：响应太大会传输超时，GET 的 URL 超过约 8K 会被 nginx 拒绝
+BATCH = 100
+
+
 def coverage(database, sample):
     section("2. 双向覆盖差异")
 
     ids = mongo(database, f"db.curseforge_mods.aggregate([{{$sample:{{size:{sample}}}}},{{$project:{{_id:1}}}}]).toArray().map(d=>d._id).join(',')")
     ids = [int(x) for x in ids.split(",") if x]
-    got = curl(f"{PROD}/curseforge/v1/mods", {"modIds": ids}) or {}
-    have = {m["id"] for m in got.get("data", [])}
-    miss = [i for i in ids if i not in have]
-    print(f"  CF: 抽本地 {len(ids)} 个，生产缺 {len(miss)} 个 ({len(miss) * 100 // max(len(ids), 1)}%)")
+    checked, miss, failed = [], [], 0
+    for i in range(0, len(ids), BATCH):
+        chunk = ids[i:i + BATCH]
+        got = curl(f"{PROD}/curseforge/v1/mods", {"modIds": chunk})
+        if not isinstance(got, dict) or "data" not in got:
+            # 请求失败的这批不参与统计，当成「生产没有」会误报成 100% 缺失
+            failed += len(chunk)
+            continue
+        have = {m["id"] for m in got["data"]}
+        checked += chunk
+        miss += [i for i in chunk if i not in have]
+    print(f"  CF: 抽本地 {len(ids)} 个，成功核对 {len(checked)} 个，生产缺 {len(miss)} 个"
+          f" ({len(miss) * 100 // max(len(checked), 1)}%)" + (f"，{failed} 个请求失败" if failed else ""))
     if miss[:5]:
         print(f"      例: {miss[:5]}")
 
     pids = mongo(database, f"db.modrinth_projects.aggregate([{{$sample:{{size:{sample}}}}},{{$project:{{_id:1}}}}]).toArray().map(d=>d._id).join(',')")
     pids = [x for x in pids.split(",") if x]
-    q = urllib.parse.quote(json.dumps(pids))
-    got = curl(f"{PROD}/modrinth/v2/projects?ids={q}")
-    have = {p["id"] for p in got} if isinstance(got, list) else set()
-    miss = [i for i in pids if i not in have]
-    print(f"  MR: 抽本地 {len(pids)} 个，生产缺 {len(miss)} 个 ({len(miss) * 100 // max(len(pids), 1)}%)")
+    checked, miss, failed = [], [], 0
+    for i in range(0, len(pids), BATCH):
+        chunk = pids[i:i + BATCH]
+        q = urllib.parse.quote(json.dumps(chunk))
+        got = curl(f"{PROD}/modrinth/v2/projects?ids={q}")
+        if not isinstance(got, list):
+            failed += len(chunk)
+            continue
+        have = {p["id"] for p in got}
+        checked += chunk
+        miss += [i for i in chunk if i not in have]
+    print(f"  MR: 抽本地 {len(pids)} 个，成功核对 {len(checked)} 个，生产缺 {len(miss)} 个"
+          f" ({len(miss) * 100 // max(len(checked), 1)}%)" + (f"，{failed} 个请求失败" if failed else ""))
     if miss[:5]:
         print(f"      例: {miss[:5]}")
 
