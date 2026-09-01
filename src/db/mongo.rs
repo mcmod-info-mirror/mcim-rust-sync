@@ -19,12 +19,10 @@ impl Database {
         let mut options = ClientOptions::parse(config.mongodb.uri()).await?;
         options.app_name = Some("mcim-rust-sync".to_string());
         let client = Client::with_options(options)?;
+        let database: mongodb::Database = client.database(&config.mongodb.database);
 
-        // 连不上就直接失败，不要等到写库时才发现
-        client
-            .database("admin")
-            .run_command(doc! { "ping": 1 })
-            .await?;
+        // 连不上就直接失败
+        database.run_command(doc! { "ping": 1 }).await?;
 
         Ok(Self {
             inner: client.database(&config.mongodb.database),
@@ -157,45 +155,46 @@ impl Database {
         Ok(result.deleted_count)
     }
 
-    /// 建立本仓库写入、mcim-rust-api 读取所需的索引
-    ///
-    /// Python 版只在模型里声明 index=True 却从不调用建索引，实际靠人工维护。
-    /// 缺了这些索引，同步时按 modId / project_id 的删除会退化成全表扫描
     pub async fn ensure_indexes(&self) -> Result<Vec<String>> {
         use mongodb::IndexModel;
+        use mongodb::options::IndexOptions;
 
-        let plan: &[(&str, &str)] = &[
-            // 同步时按 mod 清理旧文件，读侧按 modId 取文件列表
-            ("curseforge_files", "modId"),
-            // 读侧按指纹反查
-            ("curseforge_files", "fileFingerprint"),
-            ("curseforge_categories", "gameId"),
-            // 读侧按 hash 反查版本
-            ("modrinth_files", "_id.sha1"),
-            ("modrinth_files", "_id.sha512"),
-            // 同步时按项目清理旧文件与旧版本
-            ("modrinth_files", "project_id"),
-            ("modrinth_files", "version_id"),
-            ("modrinth_versions", "project_id"),
+        let plan: &[(&str, Document, &str)] = &[
+            ("curseforge_files", doc! { "modId": 1 }, "modId_1"),
+            ("curseforge_files", doc! { "fileFingerprint": 1 }, "fileFingerprint_1"),
+            ("curseforge_categories", doc! { "gameId": 1 }, "gameId_1"),
+            ("modrinth_projects", doc! { "slug": 1 }, "slug_1"),
+            ("modrinth_versions", doc! { "project_id": 1 }, "project_id_1"),
+            ("modrinth_files", doc! { "_id.sha1": 1 }, "_id.sha1_1"),
+            ("modrinth_files", doc! { "_id.sha512": 1 }, "_id.sha512_1"),
+            ("modrinth_files", doc! { "version_id": 1 }, "version_id_1"),
+            (
+                "modrinth_files",
+                doc! { "project_id": 1, "version_id": 1, "filename": 1 },
+                "project_id_1_version_id_1_filename_1",
+            ),
         ];
 
-        let mut created = Vec::new();
-        for (collection, field) in plan {
+        let mut created = Vec::with_capacity(plan.len());
+        for &(collection, ref keys, name) in plan {
             let model = IndexModel::builder()
-                .keys(doc! { *field: 1 })
+                .keys(keys.clone())
                 .options(
-                    mongodb::options::IndexOptions::builder()
-                        .name(Some(format!("{}_1", field)))
+                    IndexOptions::builder()
+                        .name(Some(name.to_string()))
                         .build(),
                 )
                 .build();
-            let name = self
+
+            let index_name = self
                 .collection::<Document>(collection)
                 .create_index(model)
                 .await?
                 .index_name;
-            created.push(format!("{}.{}", collection, name));
+
+            created.push(format!("{}.{}", collection, index_name));
         }
+
         Ok(created)
     }
 
