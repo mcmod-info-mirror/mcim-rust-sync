@@ -51,3 +51,28 @@ fn missing_file_is_an_error() {
     let result = Config::load(Path::new("/nonexistent/config.json"));
     assert!(result.is_err());
 }
+
+/// 老配置里没有 schedule，守护模式之外的用法不受影响
+#[test]
+fn schedule_is_optional() {
+    let config = fixture();
+    assert!(config.schedule.is_empty());
+    assert_eq!(config.shutdown_grace_secs, 300);
+}
+
+#[test]
+fn loads_schedule() {
+    let raw = r#"{
+        "schedule": {
+            "curseforge-queue": { "cron": "*/20 * * * *", "args": "curseforge queue" },
+            "modrinth-tags": { "cron": "0 0 * * *", "args": "modrinth tags" }
+        },
+        "shutdown_grace_secs": 60
+    }"#;
+    let config = Config::from_json(raw).expect("解析配置失败");
+
+    assert_eq!(config.schedule.len(), 2);
+    assert_eq!(config.schedule["curseforge-queue"].cron, "*/20 * * * *");
+    assert_eq!(config.schedule["modrinth-tags"].args, "modrinth tags");
+    assert_eq!(config.shutdown_grace_secs, 60);
+}

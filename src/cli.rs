@@ -9,7 +9,7 @@ use crate::constants::ACCEPT_GAME_IDS;
     name = "mcim-rust-sync",
     version,
     about = "拉取 CurseForge 与 Modrinth 的信息写入 MCIM 缓存库",
-    long_about = "每次运行只执行一个任务，跑完即退出，调度交给 cron 或 systemd timer"
+    long_about = "缺省每次运行只执行一个任务，跑完即退出；daemon 常驻，按配置里的 schedule 定时执行"
 )]
 pub struct Cli {
     /// 配置文件路径
@@ -24,7 +24,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     /// CurseForge 相关任务
     #[command(subcommand)]
@@ -36,9 +36,35 @@ pub enum Command {
 
     /// 建立同步与查询所需的 MongoDB 索引，可重复执行
     Indexes,
+
+    /// 常驻，按配置里的 schedule 定时执行任务
+    Daemon,
 }
 
-#[derive(Debug, Subcommand)]
+/// 只用来解析 schedule 里的 args，不作为独立的命令行入口
+#[derive(Debug, Parser)]
+#[command(no_binary_name = true)]
+struct ScheduledCommand {
+    #[command(subcommand)]
+    command: Command,
+}
+
+impl Command {
+    /// 解析 schedule 里的 args
+    ///
+    /// 走的是同一套 clap 定义，任务和参数只有一份来源。
+    /// 按空白切分，现有任务的参数都不含空格
+    pub fn parse_args(raw: &str) -> std::result::Result<Self, String> {
+        let parsed =
+            ScheduledCommand::try_parse_from(raw.split_whitespace()).map_err(|e| e.to_string())?;
+        match parsed.command {
+            Command::Daemon => Err("daemon 不能排进 schedule".to_string()),
+            command => Ok(command),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
 pub enum CurseforgeTask {
     /// 消费 Redis 队列里未命中的 modid、fileid 与 fingerprint
     Queue,
@@ -68,7 +94,7 @@ pub enum CurseforgeTask {
     },
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum ModrinthTask {
     /// 消费 Redis 队列里未命中的 project_id、version_id 与 hash
     Queue,

@@ -55,7 +55,29 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 ## 调度
 
-用 crontab 或 systemd timer 驱动，参考 mcim-sync 的执行频率：
+`daemon` 常驻，按配置里的 `schedule` 定时执行任务：
+
+```json
+"schedule": {
+    "curseforge-queue":      { "cron": "*/20 * * * *",     "args": "curseforge queue" },
+    "modrinth-queue":        { "cron": "10,30,50 * * * *", "args": "modrinth queue" },
+    "curseforge-refresh":    { "cron": "0 */2 * * *",      "args": "curseforge refresh" },
+    "modrinth-refresh":      { "cron": "0 */2 * * *",      "args": "modrinth refresh" },
+    "curseforge-search":     { "cron": "0 */2 * * *",      "args": "curseforge search" },
+    "modrinth-search":       { "cron": "30 */2 * * *",     "args": "modrinth search" },
+    "curseforge-categories": { "cron": "0 0 * * *",        "args": "curseforge categories" },
+    "modrinth-tags":         { "cron": "0 0 * * *",        "args": "modrinth tags" },
+    "modrinth-refresh-full": { "cron": "0 4 * * *",        "args": "modrinth refresh-full" }
+}
+```
+
+键是任务名，只用于日志；`args` 与命令行子命令写法一致，cron 按 UTC 判定。`--full` 是冷启动用的，不要排进 `schedule`。
+
+同一个任务不自我重叠，上一轮没跑完就跳过本轮并告警；不同任务并发，对上游的速率由按域名共享的令牌桶约束。停机期间错过的班次不补跑。
+
+`SIGTERM` / `SIGINT` 后不再排新任务，等在跑的收尾，超过 `shutdown_grace_secs`（缺省 300 秒）强行终止。守护模式常驻，Exit Code 只区分正常停止（`0`）与出错（`2`），持续故障看日志里的 `streak`。
+
+也可以留空 `schedule`，用 crontab 或 systemd timer 逐个调起：
 
 ```cron
 */20 * * * *  mcim-rust-sync curseforge queue

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use serde::Deserialize;
@@ -19,6 +19,9 @@ fn default_curseforge_api() -> String {
 }
 fn default_modrinth_api() -> String {
     "https://api.modrinth.com".to_string()
+}
+fn default_shutdown_grace_secs() -> u64 {
+    300
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,6 +108,16 @@ pub struct RateLimit {
     pub refill_rate: u32,
 }
 
+/// 守护模式下的一条定时计划
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScheduleEntry {
+    /// cron 表达式，按 UTC 判定
+    pub cron: String,
+
+    /// 要跑的子命令，写法与命令行一致
+    pub args: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -139,6 +152,14 @@ pub struct Config {
 
     #[serde(default)]
     pub domain_rate_limits: HashMap<String, RateLimit>,
+
+    /// 守护模式的定时计划，键是任务名，只用于日志；缺省表示不排期
+    #[serde(default)]
+    pub schedule: BTreeMap<String, ScheduleEntry>,
+
+    /// 收到停止信号后留给在跑任务收尾的秒数
+    #[serde(default = "default_shutdown_grace_secs")]
+    pub shutdown_grace_secs: u64,
 }
 
 impl Config {
