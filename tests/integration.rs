@@ -269,8 +269,12 @@ async fn ensure_indexes_is_idempotent() {
     assert!(first.iter().any(|n| n == "modrinth_files._id.sha1_1"));
     assert!(first.iter().any(|n| n == "modrinth_files._id.sha512_1"));
 
-    // 同步时按 project_id 删文件，没有这个索引会退化成全表扫描
-    assert!(first.iter().any(|n| n == "modrinth_files.project_id_1"));
+    // 同步时按 project_id 删文件，复合索引的最左前缀就是 project_id
+    assert!(
+        first
+            .iter()
+            .any(|n| n == "modrinth_files.project_id_1_version_id_1_filename_1")
+    );
 
     let names: Vec<String> = db
         .collection::<Document>("modrinth_files")
