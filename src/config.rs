@@ -318,6 +318,14 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    /// 只解析 JSON，不应用真实环境变量
+    ///
+    /// `Config::from_json` 会读进程 env，拿它做基线的话
+    /// 测试结果取决于跑测试的机器上设了什么
+    fn parse_only(raw: &str) -> Config {
+        serde_json::from_str(raw).expect("解析失败")
+    }
+
     /// 用假的环境变量来源，不碰进程全局 env，测试之间不会互相干扰
     fn with_env(pairs: &[(&str, &str)]) -> Result<Config> {
         let map: HashMap<String, String> = pairs
@@ -377,7 +385,7 @@ mod tests {
     /// 没设置的键不能动配置文件里的值
     #[test]
     fn absent_keys_leave_the_file_alone() {
-        let mut config = Config::from_json(r#"{"max_workers": 4}"#).expect("解析失败");
+        let mut config = parse_only(r#"{"max_workers": 4}"#);
         config
             .apply_overrides(&Env(|_: &str| None))
             .expect("覆盖失败");
@@ -387,8 +395,7 @@ mod tests {
     /// 空字符串按未设置处理，否则 compose 里留个空值就把密钥清掉了
     #[test]
     fn empty_value_is_not_an_override() {
-        let mut config =
-            Config::from_json(r#"{"curseforge_api_key": "real"}"#).expect("解析失败");
+        let mut config = parse_only(r#"{"curseforge_api_key": "real"}"#);
         let map: HashMap<String, String> =
             [("MCIM_CURSEFORGE_API_KEY".to_string(), String::new())].into();
         config
