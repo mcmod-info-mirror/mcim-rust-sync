@@ -185,7 +185,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 
     tracing::info!(count = outdated.len(), "需要刷新的 mod");
     let report = cf.sync_mods(&outdated).await;
-    let mut summary = TaskSummary {
+    let summary = TaskSummary {
         total: report.total(),
         synced: report.synced.len(),
         not_found: report.not_found.len(),
@@ -194,8 +194,6 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         requeued: 0,
     };
 
-    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.to_string()).collect();
-    summary.requeued = requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
     Ok(summary)
 }
 

@@ -174,9 +174,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     tracing::info!(count = outdated.len(), removed, "需要刷新的项目");
 
     let report = mr.sync_projects(&outdated).await;
-    let mut summary = summarize(&report);
-    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
-    summary.requeued = requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+    let summary = summarize(&report);
     Ok(summary)
 }
 
@@ -222,9 +220,7 @@ pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
     tracing::info!(count = ids.len(), "开始全量刷新");
 
     let report = mr.sync_projects(&ids).await;
-    let mut summary = summarize(&report);
-    let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
-    summary.requeued = requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
+    let summary = summarize(&report);
     Ok(summary)
 }
 
