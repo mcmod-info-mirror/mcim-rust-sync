@@ -68,3 +68,9 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 0 0 * * *     mcim-rust-sync modrinth tags
 0 4 * * *     mcim-rust-sync modrinth refresh-full
 ```
+
+## 鸣谢
+
+谢谢来自 [HyacinthHaru](https://github.com/HyacinthHaru) 的支持！
+
+之前有过尝试，最终在 HyacinthHaru 的支持下才重新开始。
