@@ -45,10 +45,22 @@ fn redis_uri_without_password() {
     assert_eq!(config.redis.uri(), "redis://localhost:6379/0");
 }
 
+/// 容器里通常不挂配置文件，只给环境变量
 #[test]
-fn missing_file_is_an_error() {
-    // Python 版在配置缺失时会写出一份默认配置，这里要直接失败
-    let result = Config::load(Path::new("/nonexistent/config.json"));
+fn missing_file_falls_back_to_defaults() {
+    let config = Config::load(Path::new("/nonexistent/config.json")).expect("应当回落到默认值");
+    assert_eq!(config.mongodb.host, "localhost");
+    assert_eq!(config.max_workers, 8);
+    assert!(config.schedule.is_empty());
+}
+
+/// 文件在但内容坏了必须直接失败，不能带着半份配置跑起来
+#[test]
+fn malformed_file_is_an_error() {
+    let path = std::env::temp_dir().join("mcim-malformed-config.json");
+    std::fs::write(&path, "{ this is not json").expect("写入夹具失败");
+    let result = Config::load(&path);
+    let _ = std::fs::remove_file(&path);
     assert!(result.is_err());
 }
 

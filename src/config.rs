@@ -162,36 +162,141 @@ pub struct Config {
     pub shutdown_grace_secs: u64,
 }
 
+/// 环境变量来源，测试时可以换成别的
+struct Env<F>(F);
+
+impl<F: Fn(&str) -> Option<String>> Env<F> {
+    /// 空字符串按未设置处理，免得空的环境变量把配置里的值清掉
+    fn text(&self, key: &str) -> Option<String> {
+        (self.0)(key).filter(|value| !value.is_empty())
+    }
+
+    fn parse<T: std::str::FromStr>(&self, key: &str) -> Result<Option<T>> {
+        match self.text(key) {
+            None => Ok(None),
+            Some(raw) => raw
+                .parse::<T>()
+                .map(Some)
+                .map_err(|_| Error::Config(format!("{} 的值 {:?} 解析不了", key, raw))),
+        }
+    }
+
+    fn json<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+        match self.text(key) {
+            None => Ok(None),
+            Some(raw) => serde_json::from_str(&raw)
+                .map(Some)
+                .map_err(|e| Error::Config(format!("{} 不是合法 JSON: {}", key, e))),
+        }
+    }
+}
+
 impl Config {
-    /// 从 config.json 读取，缺失的键回落到默认值
+    /// 读取配置，文件不存在时全部走默认值加环境变量
     ///
-    /// 与 Python 版不同，文件不存在时直接报错而不是写出一份默认配置
+    /// 容器里通常只给环境变量、不挂配置文件。文件存在但解析不了仍然直接失败，
+    /// 免得带着半份配置跑起来
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = std::fs::read_to_string(path)
-            .map_err(|e| Error::Config(format!("读取 {} 失败: {}", path.display(), e)))?;
-        Self::from_json(&raw)
-            .map_err(|e| Error::Config(format!("解析 {} 失败: {}", path.display(), e)))
+        match std::fs::read_to_string(path) {
+            Ok(raw) => {
+                tracing::info!(path = %path.display(), "已加载配置文件");
+                Self::from_json(&raw)
+                    .map_err(|e| Error::Config(format!("解析 {} 失败: {}", path.display(), e)))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!(path = %path.display(), "配置文件不存在，只用默认值与环境变量");
+                Self::from_json("{}")
+            }
+            Err(e) => Err(Error::Config(format!(
+                "读取 {} 失败: {}",
+                path.display(),
+                e
+            ))),
+        }
     }
 
     /// 从 JSON 文本构造，缺失的键回落到默认值
     pub fn from_json(raw: &str) -> Result<Self> {
         let mut config: Config =
             serde_json::from_str(raw).map_err(|e| Error::Config(e.to_string()))?;
-        config.apply_env();
+        config.apply_overrides(&Env(|key: &str| std::env::var(key).ok()))?;
         Ok(config)
     }
 
-    /// 允许用环境变量覆盖密钥，避免明文落在配置文件里
-    fn apply_env(&mut self) {
-        if let Ok(key) = std::env::var("MCIM_CURSEFORGE_API_KEY") {
-            self.curseforge_api_key = key;
+    /// 环境变量覆盖配置文件，容器里可以完全不挂文件
+    ///
+    /// schedule 与 domain_rate_limits 是映射，只能整体用 JSON 覆盖
+    fn apply_overrides<F: Fn(&str) -> Option<String>>(&mut self, env: &Env<F>) -> Result<()> {
+        if let Some(value) = env.parse("MCIM_DEBUG")? {
+            self.debug = value;
         }
-        if let Ok(password) = std::env::var("MCIM_MONGODB_PASSWORD") {
-            self.mongodb.password = Some(password);
+
+        if let Some(value) = env.text("MCIM_MONGODB_HOST") {
+            self.mongodb.host = value;
         }
-        if let Ok(password) = std::env::var("MCIM_REDIS_PASSWORD") {
-            self.redis.password = Some(password);
+        if let Some(value) = env.parse("MCIM_MONGODB_PORT")? {
+            self.mongodb.port = value;
         }
+        if let Some(value) = env.parse("MCIM_MONGODB_AUTH")? {
+            self.mongodb.auth = value;
+        }
+        if let Some(value) = env.text("MCIM_MONGODB_USER") {
+            self.mongodb.user = Some(value);
+        }
+        if let Some(value) = env.text("MCIM_MONGODB_PASSWORD") {
+            self.mongodb.password = Some(value);
+        }
+        if let Some(value) = env.text("MCIM_MONGODB_DATABASE") {
+            self.mongodb.database = value;
+        }
+
+        if let Some(value) = env.text("MCIM_REDIS_HOST") {
+            self.redis.host = value;
+        }
+        if let Some(value) = env.parse("MCIM_REDIS_PORT")? {
+            self.redis.port = value;
+        }
+        if let Some(value) = env.text("MCIM_REDIS_PASSWORD") {
+            self.redis.password = Some(value);
+        }
+        if let Some(value) = env.parse("MCIM_REDIS_DATABASE")? {
+            self.redis.database = value;
+        }
+
+        if let Some(value) = env.parse("MCIM_MAX_WORKERS")? {
+            self.max_workers = value;
+        }
+        if let Some(value) = env.parse("MCIM_CURSEFORGE_CHUNK_SIZE")? {
+            self.curseforge_chunk_size = value;
+        }
+        if let Some(value) = env.parse("MCIM_MODRINTH_CHUNK_SIZE")? {
+            self.modrinth_chunk_size = value;
+        }
+
+        if let Some(value) = env.text("MCIM_CURSEFORGE_API") {
+            self.curseforge_api = value;
+        }
+        if let Some(value) = env.text("MCIM_MODRINTH_API") {
+            self.modrinth_api = value;
+        }
+        if let Some(value) = env.text("MCIM_CURSEFORGE_API_KEY") {
+            self.curseforge_api_key = value;
+        }
+        if let Some(value) = env.text("MCIM_PROXY") {
+            self.proxy = Some(value);
+        }
+
+        if let Some(value) = env.json("MCIM_DOMAIN_RATE_LIMITS")? {
+            self.domain_rate_limits = value;
+        }
+        if let Some(value) = env.json("MCIM_SCHEDULE")? {
+            self.schedule = value;
+        }
+        if let Some(value) = env.parse("MCIM_SHUTDOWN_GRACE_SECS")? {
+            self.shutdown_grace_secs = value;
+        }
+
+        Ok(())
     }
 }
 
@@ -206,4 +311,96 @@ fn urlencode(value: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// 用假的环境变量来源，不碰进程全局 env，测试之间不会互相干扰
+    fn with_env(pairs: &[(&str, &str)]) -> Result<Config> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let mut config: Config = serde_json::from_str("{}").expect("默认配置构造失败");
+        config.apply_overrides(&Env(|key: &str| map.get(key).cloned()))?;
+        Ok(config)
+    }
+
+    /// 容器里不挂配置文件，全部字段都要能从环境变量给
+    #[test]
+    fn env_alone_is_enough() {
+        let config = with_env(&[
+            ("MCIM_MONGODB_HOST", "mongo"),
+            ("MCIM_MONGODB_PORT", "27018"),
+            ("MCIM_MONGODB_DATABASE", "mcim"),
+            ("MCIM_REDIS_HOST", "redis"),
+            ("MCIM_REDIS_DATABASE", "3"),
+            ("MCIM_MAX_WORKERS", "16"),
+            ("MCIM_CURSEFORGE_API_KEY", "key"),
+            ("MCIM_SHUTDOWN_GRACE_SECS", "90"),
+        ])
+        .expect("解析失败");
+
+        assert_eq!(config.mongodb.host, "mongo");
+        assert_eq!(config.mongodb.port, 27018);
+        assert_eq!(config.mongodb.database, "mcim");
+        assert_eq!(config.redis.host, "redis");
+        assert_eq!(config.redis.database, 3);
+        assert_eq!(config.max_workers, 16);
+        assert_eq!(config.curseforge_api_key, "key");
+        assert_eq!(config.shutdown_grace_secs, 90);
+    }
+
+    /// 映射类型只能整体用 JSON 覆盖
+    #[test]
+    fn maps_come_from_json() {
+        let config = with_env(&[
+            (
+                "MCIM_SCHEDULE",
+                r#"{"modrinth-tags":{"cron":"0 0 * * *","args":"modrinth tags"}}"#,
+            ),
+            (
+                "MCIM_DOMAIN_RATE_LIMITS",
+                r#"{"api.modrinth.com":{"capacity":100,"refill_rate":3}}"#,
+            ),
+        ])
+        .expect("解析失败");
+
+        assert_eq!(config.schedule.len(), 1);
+        assert_eq!(config.schedule["modrinth-tags"].cron, "0 0 * * *");
+        assert_eq!(config.domain_rate_limits["api.modrinth.com"].refill_rate, 3);
+    }
+
+    /// 没设置的键不能动配置文件里的值
+    #[test]
+    fn absent_keys_leave_the_file_alone() {
+        let mut config = Config::from_json(r#"{"max_workers": 4}"#).expect("解析失败");
+        config
+            .apply_overrides(&Env(|_: &str| None))
+            .expect("覆盖失败");
+        assert_eq!(config.max_workers, 4);
+    }
+
+    /// 空字符串按未设置处理，否则 compose 里留个空值就把密钥清掉了
+    #[test]
+    fn empty_value_is_not_an_override() {
+        let mut config =
+            Config::from_json(r#"{"curseforge_api_key": "real"}"#).expect("解析失败");
+        let map: HashMap<String, String> =
+            [("MCIM_CURSEFORGE_API_KEY".to_string(), String::new())].into();
+        config
+            .apply_overrides(&Env(|key: &str| map.get(key).cloned()))
+            .expect("覆盖失败");
+        assert_eq!(config.curseforge_api_key, "real");
+    }
+
+    /// 值写错要当场报出来，不能默默忽略后按默认值跑
+    #[test]
+    fn unparsable_value_is_an_error() {
+        assert!(with_env(&[("MCIM_MAX_WORKERS", "很多")]).is_err());
+        assert!(with_env(&[("MCIM_SCHEDULE", "not json")]).is_err());
+    }
 }

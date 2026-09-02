@@ -47,13 +47,23 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 ## 配置
 
-密钥可以用环境变量覆盖，避免明文落在配置文件里：
+每个配置项都能用环境变量覆盖，容器里可以不挂 `config.json`。文件不存在就全部走默认值与环境变量，文件在但解析不了则直接失败。
 
 | 环境变量 | 覆盖项 |
 | --- | --- |
+| `MCIM_DEBUG` | `debug` |
+| `MCIM_MONGODB_HOST` / `_PORT` / `_AUTH` / `_USER` / `_PASSWORD` / `_DATABASE` | `mongodb.*` |
+| `MCIM_REDIS_HOST` / `_PORT` / `_PASSWORD` / `_DATABASE` | `redis.*` |
+| `MCIM_MAX_WORKERS` | `max_workers` |
+| `MCIM_CURSEFORGE_CHUNK_SIZE` / `MCIM_MODRINTH_CHUNK_SIZE` | 批量接口的分块大小 |
+| `MCIM_CURSEFORGE_API` / `MCIM_MODRINTH_API` | 上游地址 |
 | `MCIM_CURSEFORGE_API_KEY` | `curseforge_api_key` |
-| `MCIM_MONGODB_PASSWORD` | `mongodb.password` |
-| `MCIM_REDIS_PASSWORD` | `redis.password` |
+| `MCIM_PROXY` | `proxy` |
+| `MCIM_SHUTDOWN_GRACE_SECS` | `shutdown_grace_secs` |
+| `MCIM_DOMAIN_RATE_LIMITS` | `domain_rate_limits`，整段 JSON |
+| `MCIM_SCHEDULE` | `schedule`，整段 JSON |
+
+映射类型只能整体覆盖，标量按项覆盖。空字符串按未设置处理，写错的值在启动时就报错。
 
 ## 调度
 

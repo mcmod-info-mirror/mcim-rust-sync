@@ -18,6 +18,20 @@ pub struct App {
 
 impl App {
     pub async fn new(config: Config) -> Result<Self> {
+        // 配置可以完全来自环境变量，把最终连到哪儿打出来，
+        // 免得配错了却一路跑到写库才发现
+        tracing::info!(
+            mongodb = format!(
+                "{}:{}/{}",
+                config.mongodb.host, config.mongodb.port, config.mongodb.database
+            ),
+            redis = format!(
+                "{}:{}/{}",
+                config.redis.host, config.redis.port, config.redis.database
+            ),
+            "连接目标"
+        );
+
         let http = Arc::new(HttpClient::new(&config)?);
         let db = Database::connect(&config).await?;
         let queues = Queues::connect(&config).await?;
