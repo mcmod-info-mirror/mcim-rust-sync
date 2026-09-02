@@ -57,7 +57,7 @@ fn missing_file_is_an_error() {
 fn schedule_is_optional() {
     let config = fixture();
     assert!(config.schedule.is_empty());
-    assert_eq!(config.shutdown_grace_secs, 300);
+    assert_eq!(config.shutdown_grace_secs, 60);
 }
 
 #[test]
@@ -67,12 +67,12 @@ fn loads_schedule() {
             "curseforge-queue": { "cron": "*/20 * * * *", "args": "curseforge queue" },
             "modrinth-tags": { "cron": "0 0 * * *", "args": "modrinth tags" }
         },
-        "shutdown_grace_secs": 60
+        "shutdown_grace_secs": 120
     }"#;
     let config = Config::from_json(raw).expect("解析配置失败");
 
     assert_eq!(config.schedule.len(), 2);
     assert_eq!(config.schedule["curseforge-queue"].cron, "*/20 * * * *");
     assert_eq!(config.schedule["modrinth-tags"].args, "modrinth tags");
-    assert_eq!(config.shutdown_grace_secs, 60);
+    assert_eq!(config.shutdown_grace_secs, 120);
 }

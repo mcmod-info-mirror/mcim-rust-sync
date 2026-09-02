@@ -77,7 +77,7 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 同一个任务不自我重叠，上一轮没跑完就跳过本轮并告警；不同任务并发，对上游的速率由按域名共享的令牌桶约束。停机期间错过的班次不补跑。
 
-`SIGTERM` / `SIGINT` 后不再排新任务，等在跑的收尾，超过 `shutdown_grace_secs`（缺省 300 秒）强行终止。守护模式常驻，Exit Code 只区分正常停止（`0`）与出错（`2`），持续故障看日志里的 `streak`。
+`SIGTERM` / `SIGINT` 后不再排新任务，等在跑的收尾，超过 `shutdown_grace_secs`（缺省 60 秒）强行终止。守护模式常驻，Exit Code 只区分正常停止（`0`）与出错（`2`），持续故障看日志里的 `streak`。
 
 也可以留空 `schedule`，用 crontab 或 systemd timer 逐个调起：
 

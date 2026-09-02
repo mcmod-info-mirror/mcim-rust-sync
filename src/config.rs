@@ -21,7 +21,7 @@ fn default_modrinth_api() -> String {
     "https://api.modrinth.com".to_string()
 }
 fn default_shutdown_grace_secs() -> u64 {
-    300
+    60
 }
 
 #[derive(Debug, Clone, Deserialize)]
