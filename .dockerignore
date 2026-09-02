@@ -1,0 +1,15 @@
+target
+.git
+.gitignore
+**/.vscode
+**/.idea
+**/*.rs.bk
+**/mutants.out*
+config.json
+docker-compose*.yml
+Dockerfile
+.dockerignore
+LICENSE
+README.md
+scripts
+tests
