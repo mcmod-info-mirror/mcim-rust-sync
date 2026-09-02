@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Duration;
 
 use backon::{ExponentialBuilder, Retryable};
 use governor::clock::DefaultClock;
@@ -25,6 +26,12 @@ const USER_AGENT_VALUE: &str = concat!(
 
 const MAX_ERROR_BODY: usize = 300;
 
+/// 单次请求的总耗时上限
+///
+/// reqwest 默认不超时，对端不回也不断开时请求会一直挂着，退避重试根本等不到。
+/// 常驻运行时这会把任务的槽位永久占住，之后每轮都被重叠保护跳过
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
 pub struct HttpClient {
     client: reqwest::Client,
     /// 按域名限速，未配置的域名不限速
@@ -37,7 +44,9 @@ impl HttpClient {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
 
-        let mut builder = reqwest::Client::builder().default_headers(headers);
+        let mut builder = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(REQUEST_TIMEOUT);
         if let Some(proxy) = config.proxy.as_deref().filter(|p| !p.is_empty()) {
             builder = builder.proxy(reqwest::Proxy::all(proxy)?);
         }
