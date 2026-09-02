@@ -179,9 +179,6 @@ impl CurseForgeApi {
     }
 
     /// 按发布时间排序搜索
-    ///
-    /// 搜索接口把 classId 与 categoryId 当成两个不同的参数，
-    /// 拿分类 id 去填 classId 会一条都查不到
     pub async fn search(
         &self,
         game_id: i32,

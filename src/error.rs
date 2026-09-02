@@ -1,8 +1,6 @@
 use thiserror::Error;
 
 /// 同步过程中可能出现的错误
-///
-/// 与 Python 版不同，这里不吞异常：所有失败都必须显式处理或向上传播
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("config: {0}")]
@@ -52,10 +50,7 @@ impl Error {
         self.status() == Some(404)
     }
 
-    /// 是否值得重试
-    ///
-    /// Python 版把 429 归进 `ResponseCodeException` 又整类排除出重试，
-    /// 导致触发限速直接失败，这里明确把 429 与 5xx 纳入重试
+    /// 是否应该重试
     pub fn is_retryable(&self) -> bool {
         match self.status() {
             Some(429) => true,
@@ -79,8 +74,6 @@ mod tests {
         }
     }
 
-    /// Python 版把 429 归进 ResponseCodeException 又整类排除出重试，
-    /// 结果一撞限速就直接失败
     #[test]
     fn rate_limited_is_retryable() {
         assert!(response(429).is_retryable());

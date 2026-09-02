@@ -142,6 +142,7 @@ impl HttpClient {
     }
 }
 
+/// 截断字符串，超长时加省略号
 fn truncate(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         return value.to_string();

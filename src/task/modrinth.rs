@@ -165,6 +165,12 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             if let Some(item) = local_stamps.get(value.id.as_str())
                 && is_outdated(item, value)
             {
+                tracing::debug!(
+                    id = value.id,
+                    "项目有更新: local={local:?}, remote={remote:?}",
+                    local = item,
+                    remote = value
+                );
                 outdated.push(value.id.clone());
             }
         }

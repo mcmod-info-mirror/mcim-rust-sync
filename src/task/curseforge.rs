@@ -171,6 +171,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             continue;
         }
         let remote = cf.api().get_mods(&ids).await?;
+        tracing::trace!(count = remote.len(), "完成一次 get_mods 请求，上游返回的 mod 数量");
         let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch
             .iter()
             .map(|item| (item.id, item.date_modified))
@@ -178,6 +179,12 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         for value in remote {
             let local_stamp = local_stamps.get(&value.id).copied().flatten();
             if !same_second(local_stamp, value.date_modified) {
+                tracing::debug!(
+                    id = value.id,
+                    "mod 有更新: local={local:?}, remote={remote:?}",
+                    local = local_stamp,
+                    remote = value.date_modified
+                );                
                 outdated.push(value.id);
             }
         }
