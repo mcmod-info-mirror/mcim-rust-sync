@@ -56,7 +56,7 @@ impl CurseForgeSync {
     /// Mod 放最后是为了避免文件没刷成功却更新了 Mod 的 dateModified，
     /// 那样下一轮增量刷新会认为它已是最新而跳过
     pub async fn sync_mod(&self, mod_id: i32) -> Result<Outcome<ModSummary>> {
-        let mod_model = match self.api.get_mod(mod_id).await {
+        let mut mod_model = match self.api.get_mod(mod_id).await {
             Ok(value) => value,
             Err(e) if e.is_not_found() => return Ok(Outcome::NotFound),
             Err(e) => return Err(e),
@@ -103,6 +103,8 @@ impl CurseForgeSync {
             .await?;
 
         let name = mod_model.name.clone();
+        // 刚从上游取回来，等同于刚核对过
+        mod_model.checked_at = Some(mod_model.sync_at);
         self.db
             .upsert_many(collection::CURSEFORGE_MODS, &[mod_model], 1)
             .await?;

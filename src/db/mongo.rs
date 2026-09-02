@@ -141,6 +141,32 @@ impl Database {
             .collect())
     }
 
+    /// 标记这批文档在此刻被核对过
+    ///
+    /// 走 `$set` 而不是整文档替换，比对时绝大多数条目内容没变，
+    /// 没必要为了一个时间戳把整份文档重写一遍
+    pub async fn touch_checked<T>(&self, name: &str, ids: &[T], at: DateTime<Utc>) -> Result<u64>
+    where
+        T: Serialize,
+    {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let values = ids
+            .iter()
+            .map(|id| bson::serialize_to_bson(id).map_err(Error::from))
+            .collect::<Result<Vec<_>>>()?;
+
+        let result = self
+            .collection::<Document>(name)
+            .update_many(
+                doc! { "_id": { "$in": values } },
+                doc! { "$set": { "checked_at": bson::DateTime::from_chrono(at) } },
+            )
+            .await?;
+        Ok(result.modified_count)
+    }
+
     pub async fn delete_by_id<T: Serialize>(&self, name: &str, id: &T) -> Result<u64> {
         let value = bson::serialize_to_bson(id)?;
         let result = self
@@ -165,6 +191,8 @@ impl Database {
             ("curseforge_categories", doc! { "gameId": 1 }, "gameId_1"),
             ("modrinth_projects", doc! { "slug": 1 }, "slug_1"),
             ("modrinth_versions", doc! { "project_id": 1 }, "project_id_1"),
+            ("curseforge_mods", doc! { "checked_at": 1 }, "checked_at_1"),
+            ("modrinth_projects", doc! { "checked_at": 1 }, "checked_at_1"),
             ("modrinth_files", doc! { "_id.sha1": 1 }, "_id.sha1_1"),
             ("modrinth_files", doc! { "_id.sha512": 1 }, "_id.sha512_1"),
             ("modrinth_files", doc! { "version_id": 1 }, "version_id_1"),

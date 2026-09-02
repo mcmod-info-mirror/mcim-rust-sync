@@ -276,6 +276,10 @@ async fn ensure_indexes_is_idempotent() {
             .any(|n| n == "modrinth_files.project_id_1_version_id_1_filename_1")
     );
 
+    // 查「多久没核对过」要走索引，否则每次都是全表扫描
+    assert!(first.iter().any(|n| n == "curseforge_mods.checked_at_1"));
+    assert!(first.iter().any(|n| n == "modrinth_projects.checked_at_1"));
+
     let names: Vec<String> = db
         .collection::<Document>("modrinth_files")
         .list_index_names()
@@ -340,4 +344,51 @@ async fn removing_a_project_clears_its_translation() {
     ] {
         db.delete_many(name, doc! {}).await.unwrap();
     }
+}
+
+/// `touch_checked` 写下的 checked_at 不能被后续的整文档替换抹掉
+///
+/// upsert_many 走的是 replace_one，模型里没有的字段会连带消失，
+/// 所以模型必须自己带着这个字段，光靠 $set 补是不够的
+#[tokio::test]
+async fn checked_at_survives_a_full_document_replace() {
+    let Some(db) = database("mcim_test_checked").await else {
+        return;
+    };
+    let collection = collection::CURSEFORGE_MODS;
+    db.delete_many(collection, doc! {}).await.unwrap();
+
+    let mods: Vec<cf::Mod> = load("db_curseforge_mods.json");
+    db.upsert_many(collection, &mods, 4).await.unwrap();
+
+    let touched = db
+        .touch_checked(collection, &[mods[0].id], Utc::now())
+        .await
+        .unwrap();
+    assert_eq!(touched, 1);
+
+    let stored = fetch(&db, collection, mods[0].id).await;
+    assert!(
+        matches!(stored.get("checked_at"), Some(bson::Bson::DateTime(_))),
+        "touch_checked 没写进去"
+    );
+
+    // 再同步一次这条 mod，走的就是 sync_mod 的整文档替换
+    let mut refreshed = mods[0].clone();
+    refreshed.checked_at = Some(refreshed.sync_at);
+    db.upsert_many(collection, &[refreshed], 1).await.unwrap();
+
+    let stored = fetch(&db, collection, mods[0].id).await;
+    assert!(
+        matches!(stored.get("checked_at"), Some(bson::Bson::DateTime(_))),
+        "整文档替换把 checked_at 抹掉了"
+    );
+}
+
+async fn fetch(db: &Database, collection: &str, id: i32) -> Document {
+    db.collection::<Document>(collection)
+        .find_one(doc! { "_id": id })
+        .await
+        .unwrap()
+        .expect("文档丢了")
 }

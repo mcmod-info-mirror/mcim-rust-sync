@@ -114,6 +114,14 @@ pub struct Project {
     #[serde_as(as = "FlexDateTime")]
     #[serde(default = "now")]
     pub sync_at: DateTime<Utc>,
+
+    /// 最后一次核对过上游、确认这条仍是最新的时刻
+    ///
+    /// 与 `sync_at` 的区别：内容没变也会更新。只有 `sync_at` 的话，
+    /// 「从没检查过」和「刚确认过但没变」这两种情况分不开
+    #[serde_as(as = "Option<FlexDateTime>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

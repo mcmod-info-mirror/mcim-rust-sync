@@ -59,7 +59,7 @@ impl ModrinthSync {
 
     /// 同步单个项目：先写版本与文件，再写翻译标记，最后才写 Project 文档
     pub async fn sync_project(&self, project_id: &str) -> Result<Outcome<ProjectSummary>> {
-        let project = match self.api.get_project(project_id).await {
+        let mut project = match self.api.get_project(project_id).await {
             Ok(value) => value,
             Err(e) if e.is_not_found() => return Ok(Outcome::NotFound),
             Err(e) => return Err(e),
@@ -81,6 +81,8 @@ impl ModrinthSync {
             .await?;
 
         let slug = project.slug.clone();
+        // 刚从上游取回来，等同于刚核对过
+        project.checked_at = Some(project.sync_at);
         self.db
             .upsert_many(collection::MODRINTH_PROJECTS, &[project], 1)
             .await?;

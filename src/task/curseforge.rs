@@ -186,6 +186,17 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             }
         };
         tracing::trace!(count = remote.len(), "完成一次 get_mods 请求，上游返回的 mod 数量");
+
+        // 这一批核对过了，不管内容有没有变。
+        // 只是记账，写不进去也不该作废整轮
+        if let Err(error) = app
+            .db
+            .touch_checked(collection::CURSEFORGE_MODS, &ids, Utc::now())
+            .await
+        {
+            tracing::warn!(%error, count = ids.len(), "checked_at 更新失败");
+        }
+
         let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch
             .iter()
             .map(|item| (item.id, item.date_modified))

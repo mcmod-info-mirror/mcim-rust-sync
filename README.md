@@ -37,6 +37,8 @@ CurseForge 的搜索接口限制 `index + pageSize <= 10000`，单次查询最�
 
 CurseForge 没有 `refresh-full`，成本过高。
 
+`refresh` 每轮会给核对过的条目写上 `checked_at`，不管内容有没有变；`sync_at` 只在真的重新拉取时才更新。两者的差就是「确认过还是最新的，但没有变化」。
+
 Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体失败。
 
 失败的 id 会被放回 Redis 队列等待下一轮。

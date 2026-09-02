@@ -162,3 +162,35 @@ fn api_curseforge_mod() {
     assert!(doc.get_i32("_id").is_ok());
     assert!(matches!(doc.get("dateModified"), Some(bson::Bson::DateTime(_))));
 }
+
+// ---------- checked_at ----------
+
+/// 存量文档没有这个字段，必须照常读得出来
+///
+/// 读侧的 mcim-rust-api 同理，只能声明成 Option：
+/// 全库回填完成前，非 Option 会让每一条文档都反序列化失败
+#[test]
+fn checked_at_is_optional_on_existing_documents() {
+    let mods: Vec<cf::Mod> = parse("db_curseforge_mods.json");
+    let projects: Vec<mr::Project> = parse("db_modrinth_projects.json");
+    assert!(mods[0].checked_at.is_none());
+    assert!(projects[0].checked_at.is_none());
+
+    // 没有值时不落字段，避免整文档替换把 null 铺满全库
+    assert!(!to_doc(&mods[0]).contains_key("checked_at"));
+    assert!(!to_doc(&projects[0]).contains_key("checked_at"));
+}
+
+/// 有值时写成 BSON DateTime，与 sync_at 同类型
+#[test]
+fn checked_at_round_trips_as_bson_datetime() {
+    let mut mods: Vec<cf::Mod> = parse("db_curseforge_mods.json");
+    mods[0].checked_at = Some(mods[0].sync_at);
+
+    let doc = to_doc(&mods[0]);
+    assert!(matches!(doc.get("checked_at"), Some(bson::Bson::DateTime(_))));
+
+    let back: cf::Mod = bson::deserialize_from_document(doc).expect("反序列化失败");
+    let expected = bson::DateTime::from_chrono(mods[0].sync_at).to_chrono();
+    assert_eq!(back.checked_at, Some(expected));
+}

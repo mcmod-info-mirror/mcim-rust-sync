@@ -154,6 +154,15 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             }
         };
         checked += batch.len();
+        // 这一批核对过了，不管内容有没有变。
+        // 只是记账，写不进去也不该作废整轮
+        if let Err(error) = app
+            .db
+            .touch_checked(collection::MODRINTH_PROJECTS, &ids, Utc::now())
+            .await
+        {
+            tracing::warn!(%error, count = ids.len(), "checked_at 更新失败");
+        }
 
         let alive: HashSet<&str> = remote.iter().map(|item| item.id.as_str()).collect();
         for item in batch {
