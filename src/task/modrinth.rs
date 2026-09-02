@@ -140,6 +140,8 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 
     let mut outdated = Vec::new();
     let mut dead = Vec::new();
+    let mut checked = 0usize;
+    let mut skipped = 0usize;
     for batch in local.chunks(chunk.max(1)) {
         let ids: Vec<String> = batch.iter().map(|item| item.id.clone()).collect();
         let remote = match mr.api().get_projects(&ids).await {
@@ -147,9 +149,11 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
             Err(error) => {
                 // 整批失败时不能把它们当成已删除
                 tracing::warn!(%error, count = ids.len(), "批量取项目失败，本批跳过");
+                skipped += 1;
                 continue;
             }
         };
+        checked += batch.len();
 
         let alive: HashSet<&str> = remote.iter().map(|item| item.id.as_str()).collect();
         for item in batch {
@@ -176,7 +180,12 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         }
     }
 
-    let removed = remove_dead(&mr, &dead, local.len()).await?;
+    if skipped > 0 {
+        tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
+    }
+    // 分母只能算真正比对过的，拿库内总数会把缺席比例稀释掉，
+    // 上游降级时熔断就不响了
+    let removed = remove_dead(&mr, &dead, checked).await?;
     tracing::info!(count = outdated.len(), removed, "需要刷新的项目");
 
     let report = mr.sync_projects(&outdated).await;
@@ -202,16 +211,21 @@ async fn remove_dead(mr: &ModrinthSync, dead: &[String], checked: usize) -> Resu
 
     let mut removed = 0usize;
     for project_id in dead {
-        let counts = mr.remove_project(project_id).await?;
-        tracing::info!(
-            project_id,
-            projects = counts.projects,
-            versions = counts.versions,
-            files = counts.files,
-            translations = counts.translations,
-            "项目已删除"
-        );
-        removed += 1;
+        match mr.remove_project(project_id).await {
+            Ok(counts) => {
+                tracing::info!(
+                    project_id,
+                    projects = counts.projects,
+                    versions = counts.versions,
+                    files = counts.files,
+                    translations = counts.translations,
+                    "项目已删除"
+                );
+                removed += 1;
+            }
+            // 一个删不掉不该拖垮整轮刷新，下一轮还会认出它
+            Err(error) => tracing::warn!(project_id, %error, "项目删除失败"),
+        }
     }
     Ok(removed)
 }
@@ -388,6 +402,17 @@ mod tests {
         assert!(!exceeds_remove_limit(0, 70000));
         assert!(!exceeds_remove_limit(1, 70000));
         assert!(!exceeds_remove_limit(3000, 70000));
+    }
+
+    /// 分母只能算真正比对过的项目
+    ///
+    /// 上游降级时批量接口既会整批失败也会让存活项目缺席，
+    /// 拿库内总数当分母会把缺席比例稀释掉，熔断就不响了
+    #[test]
+    fn skipped_batches_must_not_dilute_the_ratio() {
+        // 15.3 万个项目里只有 1.53 万成功比对，其中 6000 个缺席
+        assert!(!exceeds_remove_limit(6_000, 153_000));
+        assert!(exceeds_remove_limit(6_000, 15_300));
     }
 
     #[test]
