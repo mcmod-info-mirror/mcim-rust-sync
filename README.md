@@ -51,17 +51,17 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 | 环境变量 | 覆盖项 |
 | --- | --- |
-| `MCIM_DEBUG` | `debug` |
-| `MCIM_MONGODB_HOST` / `_PORT` / `_AUTH` / `_USER` / `_PASSWORD` / `_DATABASE` | `mongodb.*` |
-| `MCIM_REDIS_HOST` / `_PORT` / `_PASSWORD` / `_DATABASE` | `redis.*` |
-| `MCIM_MAX_WORKERS` | `max_workers` |
-| `MCIM_CURSEFORGE_CHUNK_SIZE` / `MCIM_MODRINTH_CHUNK_SIZE` | 批量接口的分块大小 |
-| `MCIM_CURSEFORGE_API` / `MCIM_MODRINTH_API` | 上游地址 |
-| `MCIM_CURSEFORGE_API_KEY` | `curseforge_api_key` |
-| `MCIM_PROXY` | `proxy` |
-| `MCIM_SHUTDOWN_GRACE_SECS` | `shutdown_grace_secs` |
-| `MCIM_DOMAIN_RATE_LIMITS` | `domain_rate_limits`，整段 JSON |
-| `MCIM_SCHEDULE` | `schedule`，整段 JSON |
+| `DEBUG` | `debug` |
+| `MONGODB_HOST` / `_PORT` / `_AUTH` / `_USER` / `_PASSWORD` / `_DATABASE` | `mongodb.*` |
+| `REDIS_HOST` / `_PORT` / `_PASSWORD` / `_DATABASE` | `redis.*` |
+| `MAX_WORKERS` | `max_workers` |
+| `CURSEFORGE_CHUNK_SIZE` / `MODRINTH_CHUNK_SIZE` | 批量接口的分块大小 |
+| `CURSEFORGE_API` / `MODRINTH_API` | 上游地址 |
+| `CURSEFORGE_API_KEY` | `curseforge_api_key` |
+| `PROXY` | `proxy` |
+| `SHUTDOWN_GRACE_SECS` | `shutdown_grace_secs` |
+| `DOMAIN_RATE_LIMITS` | `domain_rate_limits`，整段 JSON |
+| `SCHEDULE` | `schedule`，整段 JSON |
 
 映射类型只能整体覆盖，标量按项覆盖。空字符串按未设置处理，写错的值在启动时就报错。
 

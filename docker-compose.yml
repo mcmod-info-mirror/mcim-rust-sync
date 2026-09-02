@@ -8,40 +8,36 @@ services:
     restart: always
     network_mode: host
 
-    # 必须大于 MCIM_SHUTDOWN_GRACE_SECS，否则 docker stop 会在缺省的 10 秒后
-    # 直接 SIGKILL，宽限期一秒都用不上
+    # 必须大于 SHUTDOWN_GRACE_SECS，否则 docker stop 会在缺省的 10 秒后强制杀掉进程，导致无法正常退出
     stop_grace_period: 70s
 
     environment:
       TZ: Asia/Shanghai
       RUST_LOG: mcim_rust_sync=info,warn
 
-      MCIM_MONGODB_HOST: localhost
-      MCIM_MONGODB_PORT: 27017
-      MCIM_MONGODB_DATABASE: mcim_backend
+      MONGODB_HOST: localhost
+      MONGODB_PORT: 27017
+      MONGODB_DATABASE: mcim_backend
 
-      MCIM_REDIS_HOST: localhost
-      MCIM_REDIS_PORT: 6379
-      MCIM_REDIS_DATABASE: 0
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
 
-      MCIM_MAX_WORKERS: 8
-      MCIM_CURSEFORGE_CHUNK_SIZE: 1000
-      MCIM_MODRINTH_CHUNK_SIZE: 100
+      MAX_WORKERS: 8
+      CURSEFORGE_CHUNK_SIZE: 1000
+      MODRINTH_CHUNK_SIZE: 100
 
-      MCIM_SHUTDOWN_GRACE_SECS: 60
+      SHUTDOWN_GRACE_SECS: 60
 
-      # 密钥从宿主机环境或 .env 带进来，别写死在这里
-      MCIM_CURSEFORGE_API_KEY: ${MCIM_CURSEFORGE_API_KEY:?}
+      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:?}
 
-      # 按域名限速，未列出的域名不限速
-      MCIM_DOMAIN_RATE_LIMITS: >-
+      DOMAIN_RATE_LIMITS: >-
         {
           "api.curseforge.com": { "capacity": 100, "refill_rate": 3 },
           "api.modrinth.com":   { "capacity": 100, "refill_rate": 3 }
         }
 
-      # cron 按 UTC 判定；--full 是冷启动用的，不要排进来
-      MCIM_SCHEDULE: >-
+      SCHEDULE: >-
         {
           "curseforge-queue":      { "cron": "*/20 * * * *",     "args": "curseforge queue" },
           "modrinth-queue":        { "cron": "10,30,50 * * * *", "args": "modrinth queue" },
