@@ -1,0 +1,320 @@
+[
+ {
+  "_id": 5287513,
+  "alternateFileId": 0,
+  "dependencies": [],
+  "displayName": "christmasculinarydesires 1.5.0 1.20.4 neoforge",
+  "downloadCount": 575,
+  "downloadUrl": "https://edge.forgecdn.net/files/5287/513/christmasculinarydesires%201.5.0%201.20.4%20neoforge.jar",
+  "earlyAccessEndDate": null,
+  "exposeAsAlternative": null,
+  "fileDate": {
+   "$date": "2024-04-24T11:42:16Z"
+  },
+  "fileFingerprint": 1232253386,
+  "fileLength": 3358724,
+  "fileName": "christmasculinarydesires 1.5.0 1.20.4 neoforge.jar",
+  "fileSizeOnDisk": null,
+  "fileStatus": 4,
+  "file_cdn_cached": false,
+  "found": true,
+  "gameId": 432,
+  "gameVersions": [
+   "NeoForge",
+   "1.20.4",
+   "Server"
+  ],
+  "hashes": [
+   {
+    "value": "d1a0a79e8ca6e9bb34fa665e4124a132be240240",
+    "algo": 1
+   },
+   {
+    "value": "8b318808036a2821e003c87dd1f7d90f",
+    "algo": 2
+   }
+  ],
+  "isAvailable": true,
+  "isEarlyAccessContent": null,
+  "isServerPack": false,
+  "modId": 946010,
+  "modules": [
+   {
+    "name": "META-INF",
+    "fingerprint": 264422900
+   },
+   {
+    "name": "net",
+    "fingerprint": 3519791219
+   },
+   {
+    "name": "assets",
+    "fingerprint": 4220869355
+   },
+   {
+    "name": "christmas_culinary_desires.mixins.json",
+    "fingerprint": 2194147990
+   },
+   {
+    "name": "data",
+    "fingerprint": 3054069744
+   },
+   {
+    "name": "fabric.mod.json",
+    "fingerprint": 4054319769
+   },
+   {
+    "name": "logo.png",
+    "fingerprint": 4096234243
+   },
+   {
+    "name": "pack.mcmeta",
+    "fingerprint": 2325333690
+   }
+  ],
+  "need_to_cache": true,
+  "parentProjectFileId": null,
+  "releaseType": 1,
+  "serverPackFileId": null,
+  "sortableGameVersions": [
+   {
+    "gameVersionName": "NeoForge",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2023-07-25T00:00:00Z",
+    "gameVersionTypeId": 68441
+   },
+   {
+    "gameVersionName": "1.20.4",
+    "gameVersionPadded": "0000000001.0000000020.0000000004",
+    "gameVersion": "1.20.4",
+    "gameVersionReleaseDate": "2023-12-07T15:17:47.907Z",
+    "gameVersionTypeId": 75125
+   },
+   {
+    "gameVersionName": "Server",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+    "gameVersionTypeId": 75208
+   }
+  ],
+  "sync_at": {
+   "$date": "2025-01-02T13:20:05Z"
+  },
+  "md5": "8b318808036a2821e003c87dd1f7d90f",
+  "sha1": "d1a0a79e8ca6e9bb34fa665e4124a132be240240"
+ },
+ {
+  "_id": 4958774,
+  "alternateFileId": 0,
+  "dependencies": [],
+  "displayName": "christmasculinarydesires - 1.4.0 1.16.5 forge",
+  "downloadCount": 1764,
+  "downloadUrl": "https://edge.forgecdn.net/files/4958/774/christmasculinarydesires%20-%201.4.0%201.16.5%20forge.jar",
+  "earlyAccessEndDate": null,
+  "exposeAsAlternative": null,
+  "fileDate": {
+   "$date": "2023-12-15T14:17:29Z"
+  },
+  "fileFingerprint": 1904165976,
+  "fileLength": 3609876,
+  "fileName": "christmasculinarydesires - 1.4.0 1.16.5 forge.jar",
+  "fileSizeOnDisk": null,
+  "fileStatus": 4,
+  "file_cdn_cached": false,
+  "found": true,
+  "gameId": 432,
+  "gameVersions": [
+   "Client",
+   "1.16.5",
+   "Forge",
+   "Server"
+  ],
+  "hashes": [
+   {
+    "value": "942a11caad91915d0433a5ff2df5dc2f44cdd083",
+    "algo": 1
+   },
+   {
+    "value": "2f8aa91341c1249af764207c545d7e24",
+    "algo": 2
+   }
+  ],
+  "isAvailable": true,
+  "isEarlyAccessContent": null,
+  "isServerPack": false,
+  "modId": 946010,
+  "modules": [
+   {
+    "name": "META-INF",
+    "fingerprint": 1875601336
+   },
+   {
+    "name": "net",
+    "fingerprint": 1268993459
+   },
+   {
+    "name": "assets",
+    "fingerprint": 364224264
+   },
+   {
+    "name": "data",
+    "fingerprint": 3379872559
+   },
+   {
+    "name": "logo.png",
+    "fingerprint": 4096234243
+   },
+   {
+    "name": "pack.mcmeta",
+    "fingerprint": 2125212863
+   }
+  ],
+  "need_to_cache": true,
+  "parentProjectFileId": null,
+  "releaseType": 2,
+  "serverPackFileId": null,
+  "sortableGameVersions": [
+   {
+    "gameVersionName": "Client",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+    "gameVersionTypeId": 75208
+   },
+   {
+    "gameVersionName": "1.16.5",
+    "gameVersionPadded": "0000000001.0000000016.0000000005",
+    "gameVersion": "1.16.5",
+    "gameVersionReleaseDate": "2021-01-15T14:14:48.91Z",
+    "gameVersionTypeId": 70886
+   },
+   {
+    "gameVersionName": "Forge",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+    "gameVersionTypeId": 68441
+   },
+   {
+    "gameVersionName": "Server",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+    "gameVersionTypeId": 75208
+   }
+  ],
+  "sync_at": {
+   "$date": "2025-01-02T13:20:05Z"
+  },
+  "md5": "2f8aa91341c1249af764207c545d7e24",
+  "sha1": "942a11caad91915d0433a5ff2df5dc2f44cdd083"
+ },
+ {
+  "_id": 4958751,
+  "alternateFileId": 0,
+  "dependencies": [],
+  "displayName": "christmasculinarydesires - 1.3.0 1.18.2 forge",
+  "downloadCount": 1234,
+  "downloadUrl": "https://edge.forgecdn.net/files/4958/751/christmasculinarydesires%20-%201.3.0%201.18.2%20forge.jar",
+  "earlyAccessEndDate": null,
+  "exposeAsAlternative": null,
+  "fileDate": {
+   "$date": "2023-12-15T14:01:46Z"
+  },
+  "fileFingerprint": 2221855892,
+  "fileLength": 3179846,
+  "fileName": "christmasculinarydesires - 1.3.0 1.18.2 forge.jar",
+  "fileSizeOnDisk": null,
+  "fileStatus": 4,
+  "file_cdn_cached": false,
+  "found": true,
+  "gameId": 432,
+  "gameVersions": [
+   "Client",
+   "1.18.2",
+   "Forge",
+   "Server"
+  ],
+  "hashes": [
+   {
+    "value": "10a690beea39be6645b2bc419dfc217942ecfd76",
+    "algo": 1
+   },
+   {
+    "value": "e08a3d450d8d145c26f0dcacf99e5720",
+    "algo": 2
+   }
+  ],
+  "isAvailable": true,
+  "isEarlyAccessContent": null,
+  "isServerPack": false,
+  "modId": 946010,
+  "modules": [
+   {
+    "name": "META-INF",
+    "fingerprint": 4270621168
+   },
+   {
+    "name": "net",
+    "fingerprint": 426799412
+   },
+   {
+    "name": "assets",
+    "fingerprint": 364224264
+   },
+   {
+    "name": "data",
+    "fingerprint": 3379872559
+   },
+   {
+    "name": "logo.png",
+    "fingerprint": 4096234243
+   },
+   {
+    "name": "pack.mcmeta",
+    "fingerprint": 1821200695
+   }
+  ],
+  "need_to_cache": true,
+  "parentProjectFileId": null,
+  "releaseType": 2,
+  "serverPackFileId": null,
+  "sortableGameVersions": [
+   {
+    "gameVersionName": "Client",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+    "gameVersionTypeId": 75208
+   },
+   {
+    "gameVersionName": "1.18.2",
+    "gameVersionPadded": "0000000001.0000000018.0000000002",
+    "gameVersion": "1.18.2",
+    "gameVersionReleaseDate": "2022-02-28T14:23:37.723Z",
+    "gameVersionTypeId": 73250
+   },
+   {
+    "gameVersionName": "Forge",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+    "gameVersionTypeId": 68441
+   },
+   {
+    "gameVersionName": "Server",
+    "gameVersionPadded": "0",
+    "gameVersion": "",
+    "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+    "gameVersionTypeId": 75208
+   }
+  ],
+  "sync_at": {
+   "$date": "2025-01-02T13:20:05Z"
+  },
+  "md5": "e08a3d450d8d145c26f0dcacf99e5720",
+  "sha1": "10a690beea39be6645b2bc419dfc217942ecfd76"
+ }
+]

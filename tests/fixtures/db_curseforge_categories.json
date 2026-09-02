@@ -1,0 +1,66 @@
+[
+ {
+  "_id": 4546,
+  "classId": null,
+  "dateModified": "2023-12-03T14:20:25.777Z",
+  "displayIndex": 0,
+  "gameId": 432,
+  "iconUrl": "https://media.forgecdn.net/avatars/52/99/636111139136535634.png",
+  "isClass": true,
+  "name": "Customization",
+  "parentCategoryId": null,
+  "slug": "customization",
+  "sync_at": {
+   "$date": "2025-01-26T07:33:29.587Z"
+  },
+  "url": "https://www.curseforge.com/minecraft/customization"
+ },
+ {
+  "_id": 5,
+  "classId": null,
+  "dateModified": "2022-11-10T20:44:39.38Z",
+  "displayIndex": 0,
+  "gameId": 432,
+  "iconUrl": "https://media.forgecdn.net/avatars/65/443/636162895990633284.png",
+  "isClass": true,
+  "name": "Bukkit Plugins",
+  "parentCategoryId": null,
+  "slug": "bukkit-plugins",
+  "sync_at": {
+   "$date": "2025-01-26T07:33:29.587Z"
+  },
+  "url": "https://www.curseforge.com/minecraft/bukkit-plugins"
+ },
+ {
+  "_id": 12,
+  "classId": null,
+  "dateModified": "2024-01-31T15:08:49.943Z",
+  "displayIndex": 2,
+  "gameId": 432,
+  "iconUrl": "https://media.forgecdn.net/avatars/52/102/636111139761599118.png",
+  "isClass": true,
+  "name": "Resource Packs",
+  "parentCategoryId": null,
+  "slug": "texture-packs",
+  "sync_at": {
+   "$date": "2025-01-26T07:33:29.587Z"
+  },
+  "url": "https://www.curseforge.com/minecraft/texture-packs"
+ },
+ {
+  "_id": 6,
+  "classId": null,
+  "dateModified": "2023-08-05T12:43:53.26Z",
+  "displayIndex": 1,
+  "gameId": 432,
+  "iconUrl": "https://media.forgecdn.net/avatars/52/101/636111139584399357.png",
+  "isClass": true,
+  "name": "Mods",
+  "parentCategoryId": null,
+  "slug": "mc-mods",
+  "sync_at": {
+   "$date": "2025-01-26T07:33:29.587Z"
+  },
+  "url": "https://www.curseforge.com/minecraft/mc-mods"
+ }
+]

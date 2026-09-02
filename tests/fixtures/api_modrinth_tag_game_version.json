@@ -1,0 +1,20 @@
+[
+ {
+  "version": "26.3-snapshot-9",
+  "version_type": "snapshot",
+  "date": "2026-08-17T11:46:16Z",
+  "major": false
+ },
+ {
+  "version": "26.3-snapshot-8",
+  "version_type": "snapshot",
+  "date": "2026-08-12T09:39:37Z",
+  "major": false
+ },
+ {
+  "version": "26.3-snapshot-7",
+  "version_type": "snapshot",
+  "date": "2026-08-04T11:49:07Z",
+  "major": false
+ }
+]

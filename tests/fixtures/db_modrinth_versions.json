@@ -1,0 +1,142 @@
+[
+ {
+  "_id": "BBnb9L4J",
+  "author_id": "l45nT5ov",
+  "changelog": "- [Port to 1.21](https://github.com/jaredlll08/Clumps/commit/327ca88f573f0a7f46b1c1701aa9e4a5a3b096f5) - Jared \n- [Port to 1.20.6. Close #139](https://github.com/jaredlll08/Clumps/commit/0bc727c4345894322540c709889af89ba2492c69) - Jared \n- [port to 1.20.5](https://github.com/jaredlll08/Clumps/commit/959e3961e6b077e286a845c9ca6051959f192f58) - Jared \n- [Update mod version](https://github.com/jaredlll08/Clumps/commit/6f56ba314adf695e0ef34f1a4d4084b9c43c1ac6) - Jared \n- [Port to 1.20.4. Close #130](https://github.com/jaredlll08/Clumps/commit/77b2aaf1d70d174b126f9cd200955f2521513ae6) - Jared \n- [port to 1.20.3](https://github.com/jaredlll08/Clumps/commit/f90851d213cace19045829654981354f7b0b6da3) - Jared \n- [Fix refmap not being used. Close #131](https://github.com/jaredlll08/Clumps/commit/f04c393a7f60be57491ab35bb9d97b007fab36d1) - Jared \n- [Add neoforge support](https://github.com/jaredlll08/Clumps/commit/9bb8fc0bcbb40d3c0f4ff29faefcc5dc154b06e6) - Jared \n- [Port to 1.20.2](https://github.com/jaredlll08/Clumps/commit/b953f4c45ae3057b8d1a39f541a840263ee53367) - Jared \n- [Fix experience values not being set when using a spawn egg. close #124](https://github.com/jaredlll08/Clumps/commit/ebb464852a132188a023cf0f5698e8a4216b9476) - Jared",
+  "changelog_url": null,
+  "date_published": {
+   "$date": "2024-06-15T03:17:17Z"
+  },
+  "dependencies": [],
+  "downloads": 4745,
+  "featured": false,
+  "files": [
+   {
+    "hashes": {
+     "sha512": "4962062a240a10d1eb3507b28477270d7557a2d3d83ef459f9939a4be32fa8f8fcc92c3eab5125b183f7da11a73cd9f06fb049a8b6cbc276fe3401bbede766de",
+     "sha1": "71029cb859754a0221ffc59639faae96459f1544"
+    },
+    "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/BBnb9L4J/Clumps-neoforge-1.21-18.0.0.1.jar",
+    "filename": "Clumps-neoforge-1.21-18.0.0.1.jar",
+    "primary": true,
+    "size": 18383,
+    "file_type": null
+   }
+  ],
+  "found": true,
+  "game_versions": [
+   "1.21"
+  ],
+  "loaders": [
+   "neoforge"
+  ],
+  "name": "NeoForge-1.21-18.0.0.1",
+  "project_id": "Wnxd13zP",
+  "requested_status": null,
+  "slug": "clumps",
+  "status": "listed",
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "version_number": "18.0.0.1",
+  "version_type": "release"
+ },
+ {
+  "_id": "U9tSAZs1",
+  "author_id": "l45nT5ov",
+  "changelog": "- [Port to 1.21](https://github.com/jaredlll08/Clumps/commit/327ca88f573f0a7f46b1c1701aa9e4a5a3b096f5) - Jared \n- [Port to 1.20.6. Close #139](https://github.com/jaredlll08/Clumps/commit/0bc727c4345894322540c709889af89ba2492c69) - Jared \n- [port to 1.20.5](https://github.com/jaredlll08/Clumps/commit/959e3961e6b077e286a845c9ca6051959f192f58) - Jared \n- [Update mod version](https://github.com/jaredlll08/Clumps/commit/6f56ba314adf695e0ef34f1a4d4084b9c43c1ac6) - Jared \n- [Port to 1.20.4. Close #130](https://github.com/jaredlll08/Clumps/commit/77b2aaf1d70d174b126f9cd200955f2521513ae6) - Jared \n- [port to 1.20.3](https://github.com/jaredlll08/Clumps/commit/f90851d213cace19045829654981354f7b0b6da3) - Jared \n- [Fix refmap not being used. Close #131](https://github.com/jaredlll08/Clumps/commit/f04c393a7f60be57491ab35bb9d97b007fab36d1) - Jared \n- [Add neoforge support](https://github.com/jaredlll08/Clumps/commit/9bb8fc0bcbb40d3c0f4ff29faefcc5dc154b06e6) - Jared \n- [Port to 1.20.2](https://github.com/jaredlll08/Clumps/commit/b953f4c45ae3057b8d1a39f541a840263ee53367) - Jared \n- [Fix experience values not being set when using a spawn egg. close #124](https://github.com/jaredlll08/Clumps/commit/ebb464852a132188a023cf0f5698e8a4216b9476) - Jared",
+  "changelog_url": null,
+  "date_published": {
+   "$date": "2024-06-15T03:17:14Z"
+  },
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ],
+  "downloads": 181221,
+  "featured": false,
+  "files": [
+   {
+    "hashes": {
+     "sha512": "446340da30066b84f0ede64903372c12f9de3d68c7258f6ab063a1372b4ebe8073996add98aedc767db86011e5a33d0dff63600ef1480029710cceabef66b31d",
+     "sha1": "e3062ad0b43d667b85e2a1d3bc3ea2816645f7d1"
+    },
+    "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/U9tSAZs1/Clumps-fabric-1.21-18.0.0.1.jar",
+    "filename": "Clumps-fabric-1.21-18.0.0.1.jar",
+    "primary": true,
+    "size": 20721,
+    "file_type": null
+   }
+  ],
+  "found": true,
+  "game_versions": [
+   "1.21"
+  ],
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Fabric-1.21-18.0.0.1",
+  "project_id": "Wnxd13zP",
+  "requested_status": null,
+  "slug": "clumps",
+  "status": "listed",
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "version_number": "18.0.0.1",
+  "version_type": "release"
+ },
+ {
+  "_id": "U9UF2NCO",
+  "author_id": "l45nT5ov",
+  "changelog": "- [Port to 1.20.6. Close #139](https://github.com/jaredlll08/Clumps/commit/0bc727c4345894322540c709889af89ba2492c69) - Jared \n- [port to 1.20.5](https://github.com/jaredlll08/Clumps/commit/959e3961e6b077e286a845c9ca6051959f192f58) - Jared \n- [Update mod version](https://github.com/jaredlll08/Clumps/commit/6f56ba314adf695e0ef34f1a4d4084b9c43c1ac6) - Jared \n- [Port to 1.20.4. Close #130](https://github.com/jaredlll08/Clumps/commit/77b2aaf1d70d174b126f9cd200955f2521513ae6) - Jared \n- [port to 1.20.3](https://github.com/jaredlll08/Clumps/commit/f90851d213cace19045829654981354f7b0b6da3) - Jared \n- [Fix refmap not being used. Close #131](https://github.com/jaredlll08/Clumps/commit/f04c393a7f60be57491ab35bb9d97b007fab36d1) - Jared \n- [Add neoforge support](https://github.com/jaredlll08/Clumps/commit/9bb8fc0bcbb40d3c0f4ff29faefcc5dc154b06e6) - Jared \n- [Port to 1.20.2](https://github.com/jaredlll08/Clumps/commit/b953f4c45ae3057b8d1a39f541a840263ee53367) - Jared \n- [Fix experience values not being set when using a spawn egg. close #124](https://github.com/jaredlll08/Clumps/commit/ebb464852a132188a023cf0f5698e8a4216b9476) - Jared \n- [Fix version tracker name](https://github.com/jaredlll08/Clumps/commit/3b2b4ad169439b87c91f648b4415f688c7672619) - Jared",
+  "changelog_url": null,
+  "date_published": {
+   "$date": "2024-05-06T23:20:20Z"
+  },
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ],
+  "downloads": 49663,
+  "featured": false,
+  "files": [
+   {
+    "hashes": {
+     "sha512": "6f380647d530a19db3f17f2019e99beb2f245fe70586959ae95c64b4eaa4185edf3bcad68407f0beac0dc28a954b7af472a8f9b09848745d03aff49c05056f8c",
+     "sha1": "8972c35c94f9d2b77e66aba510cec73c727f6a36"
+    },
+    "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/U9UF2NCO/Clumps-fabric-1.20.6-17.0.0.1.jar",
+    "filename": "Clumps-fabric-1.20.6-17.0.0.1.jar",
+    "primary": true,
+    "size": 20979,
+    "file_type": null
+   }
+  ],
+  "found": true,
+  "game_versions": [
+   "1.20.6"
+  ],
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Fabric-1.20.6-17.0.0.1",
+  "project_id": "Wnxd13zP",
+  "requested_status": null,
+  "slug": "clumps",
+  "status": "listed",
+  "sync_at": {
+   "$date": "2024-12-31T15:01:35Z"
+  },
+  "version_number": "17.0.0.1",
+  "version_type": "release"
+ }
+]

@@ -1,0 +1,83 @@
+[
+ {
+  "game_versions": [
+   "26.2"
+  ],
+  "loaders": [
+   "neoforge"
+  ],
+  "environment": "client_or_server_prefers_both",
+  "id": "FPYWjnnE",
+  "project_id": "Wnxd13zP",
+  "author_id": "l45nT5ov",
+  "featured": false,
+  "name": "NeoForge-26.2-26.2.1",
+  "version_number": "26.2.1",
+  "changelog": "- [Port to 26.2](https://github.com/jaredlll08/Clumps/commit/6c4d4e4bee4c0d9f7cff5de802508e27914aadca) - Jared \n- [Port to 26.1.2](https://github.com/jaredlll08/Clumps/commit/a9cb23b093f76c2ba691fcc6e13067547c98425d) - Jared \n- [Port to 26.1.1](https://github.com/jaredlll08/Clumps/commit/5a65f702a9578edea77f7139949a6c4293392173) - Jared \n- [Port to 26.1](https://github.com/jaredlll08/Clumps/commit/5fcec428801eee0e76677dcc5e26cd699031c1bb) - Jared \n- [Port to 1.21.11](https://github.com/jaredlll08/Clumps/commit/ddf3979e3c7f249b7abdb6bbfc887e6957c4d84a) - Jared \n- [Port to 1.21.10. Close #166](https://github.com/jaredlll08/Clumps/commit/8875200e3d796c88359a9b749c13d7e6153e37d8) - Jared \n- [Port to 1.21.9. Close #164](https://github.com/jaredlll08/Clumps/commit/5032adf8914e0c5e6d6c39cc0b3d7f688437c9db) - Jared \n- [port to 1.21.8](https://github.com/jaredlll08/Clumps/commit/fbd61df8b6e6a9acc13d837aaf89518338744faf) - Jared \n- [Port to 1.21.7](https://github.com/jaredlll08/Clumps/commit/64eabc1c3380f9e2257984be5564c53556e162ca) - Jared \n- [Fix forge support](https://github.com/jaredlll08/Clumps/commit/b60fb89d15b9f2337a9818559c7f90de331f8ab5) - Jared",
+  "changelog_url": null,
+  "date_published": "2026-06-17T00:44:51.019216Z",
+  "downloads": 19479,
+  "version_type": "release",
+  "status": "listed",
+  "requested_status": null,
+  "files": [
+   {
+    "id": "ltDl2hG0",
+    "hashes": {
+     "sha1": "afb2dff9ca5a0415606b0cae92c8ca04b2c9bf80",
+     "sha512": "5249d47cb6a8cc760c62ab435aa06ae2434885df24d7921a63a91a509705396c7666c8ff7739ade1e61f0d38aed2b4d750eff8549b0bd872b43d279593639edf"
+    },
+    "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/FPYWjnnE/Clumps-neoforge-26.2-26.2.1.jar",
+    "filename": "Clumps-neoforge-26.2-26.2.1.jar",
+    "primary": true,
+    "size": 18765,
+    "file_type": null
+   }
+  ],
+  "dependencies": []
+ },
+ {
+  "game_versions": [
+   "26.2"
+  ],
+  "loaders": [
+   "fabric"
+  ],
+  "environment": "client_or_server_prefers_both",
+  "id": "dEMopoOJ",
+  "project_id": "Wnxd13zP",
+  "author_id": "l45nT5ov",
+  "featured": false,
+  "name": "Fabric-26.2-26.2.1",
+  "version_number": "26.2.1",
+  "changelog": "- [Port to 26.2](https://github.com/jaredlll08/Clumps/commit/6c4d4e4bee4c0d9f7cff5de802508e27914aadca) - Jared \n- [Port to 26.1.2](https://github.com/jaredlll08/Clumps/commit/a9cb23b093f76c2ba691fcc6e13067547c98425d) - Jared \n- [Port to 26.1.1](https://github.com/jaredlll08/Clumps/commit/5a65f702a9578edea77f7139949a6c4293392173) - Jared \n- [Port to 26.1](https://github.com/jaredlll08/Clumps/commit/5fcec428801eee0e76677dcc5e26cd699031c1bb) - Jared \n- [Port to 1.21.11](https://github.com/jaredlll08/Clumps/commit/ddf3979e3c7f249b7abdb6bbfc887e6957c4d84a) - Jared \n- [Port to 1.21.10. Close #166](https://github.com/jaredlll08/Clumps/commit/8875200e3d796c88359a9b749c13d7e6153e37d8) - Jared \n- [Port to 1.21.9. Close #164](https://github.com/jaredlll08/Clumps/commit/5032adf8914e0c5e6d6c39cc0b3d7f688437c9db) - Jared \n- [port to 1.21.8](https://github.com/jaredlll08/Clumps/commit/fbd61df8b6e6a9acc13d837aaf89518338744faf) - Jared \n- [Port to 1.21.7](https://github.com/jaredlll08/Clumps/commit/64eabc1c3380f9e2257984be5564c53556e162ca) - Jared \n- [Fix forge support](https://github.com/jaredlll08/Clumps/commit/b60fb89d15b9f2337a9818559c7f90de331f8ab5) - Jared",
+  "changelog_url": null,
+  "date_published": "2026-06-17T00:44:45.934368Z",
+  "downloads": 667892,
+  "version_type": "release",
+  "status": "listed",
+  "requested_status": null,
+  "files": [
+   {
+    "id": "nWcngocc",
+    "hashes": {
+     "sha512": "a57044f0c9a07b19cd38b85528fd6b3958600c3ed1568d8a7ce32a7a473570362861ef433be4f23b02a43c05d658e9a5a71f9218fbdb963ae76a1714a0439fbe",
+     "sha1": "98e368bacc9d1a607be81d02f78f9afe913e7cfe"
+    },
+    "url": "https://cdn.modrinth.com/data/Wnxd13zP/versions/dEMopoOJ/Clumps-fabric-26.2-26.2.1.jar",
+    "filename": "Clumps-fabric-26.2-26.2.1.jar",
+    "primary": true,
+    "size": 19950,
+    "file_type": null
+   }
+  ],
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ]
+ }
+]

@@ -1,0 +1,46 @@
+[
+ {
+  "_id": {
+   "$oid": "6795fc3be84ef657877b7a0a"
+  },
+  "icon": "<svg viewBox=\"0 0 292 319\" style=\"fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;\" stroke=\"currentColor\"><g transform=\"matrix(1,0,0,1,0,-5)\"><path d=\"M12,109.5L12,155L34.5,224L57.5,224L57.5,271L81,294L160,294L160,172L259.087,172L265,155L265,109.5M12,109.5L12,64L34.5,64L34.5,41L81,17L195.5,17L241,41L241,64L265,64L265,109.5M12,109.5L81,109.5L81,132L195.5,132L195.5,109.5L265,109.5M264.087,204L264.087,244M207.5,272L207.5,312M250,272L250,312L280,312L280,272L250,272ZM192.5,204L192.5,244L222.5,244L222.5,204L192.5,204Z\" style=\"fill:none;fill-rule:nonzero;stroke-width:24px;\"/></g></svg>",
+  "name": "bukkit",
+  "supported_project_types": [
+   "plugin",
+   "project",
+   "mod"
+  ],
+  "sync_at": {
+   "$date": "2025-01-26T09:11:23.974Z"
+  }
+ },
+ {
+  "_id": {
+   "$oid": "6795fc3be84ef657877b7a0b"
+  },
+  "icon": "<svg viewBox=\"0 0 24 24\" version=\"1.1\" xml:space=\"preserve\" style=\"fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;\">\n    <rect id=\"Bungeecord\" x=\"-0\" y=\"0\" width=\"24\" height=\"24\" style=\"fill:none;\"/>\n    <path d=\"M3.778,19.778C3.778,21.004 4.774,22 6,22C7.226,22 8.222,21.004 8.222,19.778L8.222,16.444C8.222,15.218 7.226,14.222 6,14.222L6,7.556C6,5.727 7.171,4.222 9,4.222C10.829,4.222 12,5.727 12,7.556L12,16.444\" style=\"fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:2px;\"/>\n    <path d=\"M7,15L6,13L5,15L7,15\" style=\"fill:none;stroke:currentColor;stroke-width:2px;stroke-miterlimit:1.5;\"/>\n    <path d=\"M20.222,4.444C20.222,3.218 19.226,2.222 18,2.222C16.774,2.222 15.778,3.218 15.778,4.444L15.778,7.778C15.778,9.004 16.774,10 18,10L18,16.667C18,18.495 16.829,20 15,20C13.171,20 12,18.495 12,16.667L12,7.778\" style=\"fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:2px;\"/>\n    <path d=\"M17,9.222L18,11.222L19,9.222L17,9.222\" style=\"fill:none;stroke:currentColor;stroke-width:2px;stroke-miterlimit:1.5;\"/>\n</svg>",
+  "name": "bungeecord",
+  "supported_project_types": [
+   "plugin",
+   "project",
+   "mod"
+  ],
+  "sync_at": {
+   "$date": "2025-01-26T09:11:23.974Z"
+  }
+ },
+ {
+  "_id": {
+   "$oid": "6795fc3be84ef657877b7a0c"
+  },
+  "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M12 1.305 1.305 12 12 22.695 22.695 12 12 1.305Z\" style=\"\"/><path d=\"M12 5.547 5.547 12 12 18.453 18.453 12 12 5.547Z\" style=\"\"/><path d=\"M12 9.79 9.79 12 12 14.21 14.21 12 12 9.79Z\" style=\"\"/></svg>",
+  "name": "canvas",
+  "supported_project_types": [
+   "shader",
+   "project"
+  ],
+  "sync_at": {
+   "$date": "2025-01-26T09:11:23.974Z"
+  }
+ }
+]

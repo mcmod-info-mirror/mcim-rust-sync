@@ -1,0 +1,44 @@
+[
+ {
+  "_id": {
+   "$oid": "6795fc3ce84ef657877b7a20"
+  },
+  "date": {
+   "$date": "2025-01-22T13:14:44Z"
+  },
+  "major": false,
+  "sync_at": {
+   "$date": "2025-01-26T09:11:24.542Z"
+  },
+  "version": "25w04a",
+  "version_type": "snapshot"
+ },
+ {
+  "_id": {
+   "$oid": "6795fc3ce84ef657877b7a21"
+  },
+  "date": {
+   "$date": "2025-01-15T14:28:04Z"
+  },
+  "major": false,
+  "sync_at": {
+   "$date": "2025-01-26T09:11:24.542Z"
+  },
+  "version": "25w03a",
+  "version_type": "snapshot"
+ },
+ {
+  "_id": {
+   "$oid": "6795fc3ce84ef657877b7a22"
+  },
+  "date": {
+   "$date": "2025-01-08T13:42:18Z"
+  },
+  "major": false,
+  "sync_at": {
+   "$date": "2025-01-26T09:11:24.542Z"
+  },
+  "version": "25w02a",
+  "version_type": "snapshot"
+ }
+]
