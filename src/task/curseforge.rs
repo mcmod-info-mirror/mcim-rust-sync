@@ -105,13 +105,18 @@ async fn resolve_file_ids(
                     .collect();
                 if !hidden.is_empty() {
                     tracing::debug!(count = hidden.len(), "文件在列表中不可见，直接入库");
-                    cf.db()
+                    // 队列已经被取空，这里顺带补录写不进去也不能让整轮作废
+                    if let Err(error) = cf
+                        .db()
                         .upsert_many(
                             collection::CURSEFORGE_FILES,
                             &hidden,
                             app.config.max_workers,
                         )
-                        .await?;
+                        .await
+                    {
+                        tracing::warn!(%error, count = hidden.len(), "不可见文件入库失败");
+                    }
                 }
             }
             Err(error) => {
@@ -161,6 +166,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     tracing::info!(count = local.len(), "库内 mod 总数");
 
     let mut outdated = Vec::new();
+    let mut skipped = 0usize;
     for batch in local.chunks(chunk.max(1)) {
         let ids: Vec<i32> = batch
             .iter()
@@ -170,7 +176,15 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         if ids.is_empty() {
             continue;
         }
-        let remote = cf.api().get_mods(&ids).await?;
+        let remote = match cf.api().get_mods(&ids).await {
+            Ok(value) => value,
+            Err(error) => {
+                // 一批取不到不该让整轮刷新作废，其余批次照常比对
+                tracing::warn!(%error, count = ids.len(), "批量取 mod 失败，本批跳过");
+                skipped += 1;
+                continue;
+            }
+        };
         tracing::trace!(count = remote.len(), "完成一次 get_mods 请求，上游返回的 mod 数量");
         let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch
             .iter()
@@ -190,6 +204,9 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         }
     }
 
+    if skipped > 0 {
+        tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
+    }
     tracing::info!(count = outdated.len(), "需要刷新的 mod");
     let report = cf.sync_mods(&outdated).await;
     let summary = TaskSummary {
