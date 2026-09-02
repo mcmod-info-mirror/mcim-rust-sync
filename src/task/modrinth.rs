@@ -15,12 +15,6 @@ use crate::sync::modrinth::ModrinthSync;
 
 use super::{TaskSummary, requeue, same_second};
 
-/// 一轮增量刷新里允许删除的项目占比上限
-///
-/// 上游批量接口降级时会让大量存活项目「缺席」，
-/// 没有这个熔断就会被误判成已删除而真的删掉
-const MAX_REMOVE_RATIO: f64 = 0.05;
-
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct ProjectStamp {
@@ -50,14 +44,6 @@ fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
         return true;
     }
     !same_set(local.game_versions.as_ref(), remote.game_versions.as_ref())
-}
-
-/// 单轮删除量是否超过熔断阈值
-///
-/// 上游批量接口降级时会让大量存活项目在响应里缺席，
-/// 没有这道闸就会把它们当成已删除而真的删掉
-fn exceeds_remove_limit(dead: usize, checked: usize) -> bool {
-    dead as f64 / checked.max(1) as f64 > MAX_REMOVE_RATIO
 }
 
 fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>) -> TaskSummary {
@@ -140,7 +126,6 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 
     let mut outdated = Vec::new();
     let mut dead = Vec::new();
-    let mut checked = 0usize;
     let mut skipped = 0usize;
     for batch in local.chunks(chunk.max(1)) {
         let ids: Vec<String> = batch.iter().map(|item| item.id.clone()).collect();
@@ -153,7 +138,6 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
                 continue;
             }
         };
-        checked += batch.len();
         // 这一批核对过了，不管内容有没有变。
         // 只是记账，写不进去也不该作废整轮
         if let Err(error) = app
@@ -192,9 +176,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     if skipped > 0 {
         tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
     }
-    // 分母只能算真正比对过的，拿库内总数会把缺席比例稀释掉，
-    // 上游降级时熔断就不响了
-    let removed = remove_dead(&mr, &dead, checked).await?;
+    let removed = remove_dead(&mr, &dead).await?;
     tracing::info!(count = outdated.len(), removed, "需要刷新的项目");
 
     let report = mr.sync_projects(&outdated).await;
@@ -202,19 +184,9 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 删除上游已消失的项目，超过比例上限时拒绝执行
-async fn remove_dead(mr: &ModrinthSync, dead: &[String], checked: usize) -> Result<usize> {
+/// 删除上游已消失的项目
+async fn remove_dead(mr: &ModrinthSync, dead: &[String]) -> Result<usize> {
     if dead.is_empty() {
-        return Ok(0);
-    }
-    if exceeds_remove_limit(dead.len(), checked) {
-        tracing::error!(
-            dead = dead.len(),
-            checked,
-            ratio = format!("{:.2}%", dead.len() as f64 / checked.max(1) as f64 * 100.0),
-            limit = format!("{:.0}%", MAX_REMOVE_RATIO * 100.0),
-            "判定为已删除的项目占比过高，疑似上游异常，本轮不执行删除"
-        );
         return Ok(0);
     }
 
@@ -349,7 +321,7 @@ pub async fn tags(app: &App) -> Result<TaskSummary> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectStamp, exceeds_remove_limit, is_outdated, same_set};
+    use super::{ProjectStamp, is_outdated, same_set};
     use crate::models::modrinth::Project;
 
     fn project(updated: &str, versions: &[&str], game_versions: &[&str]) -> Project {
@@ -405,37 +377,9 @@ mod tests {
         assert!(!is_outdated(&local, &remote));
     }
 
-    #[test]
-    fn a_few_dead_projects_are_deleted() {
-        // 正常情况下每轮消失的项目是零星的
-        assert!(!exceeds_remove_limit(0, 70000));
-        assert!(!exceeds_remove_limit(1, 70000));
-        assert!(!exceeds_remove_limit(3000, 70000));
-    }
 
-    /// 分母只能算真正比对过的项目
-    ///
-    /// 上游降级时批量接口既会整批失败也会让存活项目缺席，
-    /// 拿库内总数当分母会把缺席比例稀释掉，熔断就不响了
-    #[test]
-    fn skipped_batches_must_not_dilute_the_ratio() {
-        // 15.3 万个项目里只有 1.53 万成功比对，其中 6000 个缺席
-        assert!(!exceeds_remove_limit(6_000, 153_000));
-        assert!(exceeds_remove_limit(6_000, 15_300));
-    }
 
-    #[test]
-    fn a_mass_disappearance_trips_the_breaker() {
-        // 一次批量接口降级能让上百个存活项目缺席，这种必须拦下
-        assert!(exceeds_remove_limit(100, 100));
-        assert!(exceeds_remove_limit(3600, 70000));
-        assert!(exceeds_remove_limit(1, 10));
-    }
 
-    #[test]
-    fn empty_check_set_does_not_divide_by_zero() {
-        assert!(!exceeds_remove_limit(0, 0));
-    }
 
     #[test]
     fn set_comparison_ignores_order() {
