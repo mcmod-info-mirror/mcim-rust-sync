@@ -16,23 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
   
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-  
-      - name: Build Rust Binary
-        run: | 
-          cargo build --release --verbose --bin mcim-rust-sync
-          cargo build --verbose --bin mcim-rust-sync
-          mkdir -p build_output
-          cp target/release/mcim-rust-sync build_output/mcim-rust-sync
-          cp target/debug/mcim-rust-sync build_output/mcim-rust-sync-debug
-  
-      - name: Upload Rust Binary Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifact
-          path: build_output/
-  
       - name: Extract Docker image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -71,3 +54,30 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+  
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+  
+      - name: Build Rust Binary
+        run: | 
+          cargo build --release --verbose --bin mcim-rust-sync
+          cargo build --verbose --bin mcim-rust-sync
+          mkdir -p build_output
+          cp target/release/mcim-rust-sync build_output/mcim-rust-sync
+          cp target/debug/mcim-rust-sync build_output/mcim-rust-sync-debug
+  
+      - name: Upload Rust Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: build_output/
