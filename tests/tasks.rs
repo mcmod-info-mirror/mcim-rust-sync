@@ -4,7 +4,7 @@
 //! 所以断言的是「跑完之后库里变成什么样」，而不只是任务没报错。
 //!
 //! 本机没有 MongoDB / Redis 时跳过；CurseForge 的用例还需要
-//! `MCIM_CURSEFORGE_API_KEY`，没配也跳过。
+//! `CURSEFORGE_API_KEY`，没配也跳过。
 
 use bson::{Document, doc};
 use chrono::{Duration, Utc};
@@ -49,7 +49,7 @@ async fn app(database: &str, redis_database: u8) -> Option<App> {
 
 fn needs_curseforge_key(app: &App) -> bool {
     if app.config.curseforge_api_key.is_empty() {
-        eprintln!("跳过：没有配 MCIM_CURSEFORGE_API_KEY");
+        eprintln!("跳过：没有配 CURSEFORGE_API_KEY");
         return true;
     }
     false

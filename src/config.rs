@@ -227,72 +227,72 @@ impl Config {
     ///
     /// schedule 与 domain_rate_limits 是映射，只能整体用 JSON 覆盖
     fn apply_overrides<F: Fn(&str) -> Option<String>>(&mut self, env: &Env<F>) -> Result<()> {
-        if let Some(value) = env.parse("MCIM_DEBUG")? {
+        if let Some(value) = env.parse("DEBUG")? {
             self.debug = value;
         }
 
-        if let Some(value) = env.text("MCIM_MONGODB_HOST") {
+        if let Some(value) = env.text("MONGODB_HOST") {
             self.mongodb.host = value;
         }
-        if let Some(value) = env.parse("MCIM_MONGODB_PORT")? {
+        if let Some(value) = env.parse("MONGODB_PORT")? {
             self.mongodb.port = value;
         }
-        if let Some(value) = env.parse("MCIM_MONGODB_AUTH")? {
+        if let Some(value) = env.parse("MONGODB_AUTH")? {
             self.mongodb.auth = value;
         }
-        if let Some(value) = env.text("MCIM_MONGODB_USER") {
+        if let Some(value) = env.text("MONGODB_USER") {
             self.mongodb.user = Some(value);
         }
-        if let Some(value) = env.text("MCIM_MONGODB_PASSWORD") {
+        if let Some(value) = env.text("MONGODB_PASSWORD") {
             self.mongodb.password = Some(value);
         }
-        if let Some(value) = env.text("MCIM_MONGODB_DATABASE") {
+        if let Some(value) = env.text("MONGODB_DATABASE") {
             self.mongodb.database = value;
         }
 
-        if let Some(value) = env.text("MCIM_REDIS_HOST") {
+        if let Some(value) = env.text("REDIS_HOST") {
             self.redis.host = value;
         }
-        if let Some(value) = env.parse("MCIM_REDIS_PORT")? {
+        if let Some(value) = env.parse("REDIS_PORT")? {
             self.redis.port = value;
         }
-        if let Some(value) = env.text("MCIM_REDIS_PASSWORD") {
+        if let Some(value) = env.text("REDIS_PASSWORD") {
             self.redis.password = Some(value);
         }
-        if let Some(value) = env.parse("MCIM_REDIS_DATABASE")? {
+        if let Some(value) = env.parse("REDIS_DATABASE")? {
             self.redis.database = value;
         }
 
-        if let Some(value) = env.parse("MCIM_MAX_WORKERS")? {
+        if let Some(value) = env.parse("MAX_WORKERS")? {
             self.max_workers = value;
         }
-        if let Some(value) = env.parse("MCIM_CURSEFORGE_CHUNK_SIZE")? {
+        if let Some(value) = env.parse("CURSEFORGE_CHUNK_SIZE")? {
             self.curseforge_chunk_size = value;
         }
-        if let Some(value) = env.parse("MCIM_MODRINTH_CHUNK_SIZE")? {
+        if let Some(value) = env.parse("MODRINTH_CHUNK_SIZE")? {
             self.modrinth_chunk_size = value;
         }
 
-        if let Some(value) = env.text("MCIM_CURSEFORGE_API") {
+        if let Some(value) = env.text("CURSEFORGE_API") {
             self.curseforge_api = value;
         }
-        if let Some(value) = env.text("MCIM_MODRINTH_API") {
+        if let Some(value) = env.text("MODRINTH_API") {
             self.modrinth_api = value;
         }
-        if let Some(value) = env.text("MCIM_CURSEFORGE_API_KEY") {
+        if let Some(value) = env.text("CURSEFORGE_API_KEY") {
             self.curseforge_api_key = value;
         }
-        if let Some(value) = env.text("MCIM_PROXY") {
+        if let Some(value) = env.text("PROXY") {
             self.proxy = Some(value);
         }
 
-        if let Some(value) = env.json("MCIM_DOMAIN_RATE_LIMITS")? {
+        if let Some(value) = env.json("DOMAIN_RATE_LIMITS")? {
             self.domain_rate_limits = value;
         }
-        if let Some(value) = env.json("MCIM_SCHEDULE")? {
+        if let Some(value) = env.json("SCHEDULE")? {
             self.schedule = value;
         }
-        if let Some(value) = env.parse("MCIM_SHUTDOWN_GRACE_SECS")? {
+        if let Some(value) = env.parse("SHUTDOWN_GRACE_SECS")? {
             self.shutdown_grace_secs = value;
         }
 
@@ -341,14 +341,14 @@ mod tests {
     #[test]
     fn env_alone_is_enough() {
         let config = with_env(&[
-            ("MCIM_MONGODB_HOST", "mongo"),
-            ("MCIM_MONGODB_PORT", "27018"),
-            ("MCIM_MONGODB_DATABASE", "mcim"),
-            ("MCIM_REDIS_HOST", "redis"),
-            ("MCIM_REDIS_DATABASE", "3"),
-            ("MCIM_MAX_WORKERS", "16"),
-            ("MCIM_CURSEFORGE_API_KEY", "key"),
-            ("MCIM_SHUTDOWN_GRACE_SECS", "90"),
+            ("MONGODB_HOST", "mongo"),
+            ("MONGODB_PORT", "27018"),
+            ("MONGODB_DATABASE", "mcim"),
+            ("REDIS_HOST", "redis"),
+            ("REDIS_DATABASE", "3"),
+            ("MAX_WORKERS", "16"),
+            ("CURSEFORGE_API_KEY", "key"),
+            ("SHUTDOWN_GRACE_SECS", "90"),
         ])
         .expect("解析失败");
 
@@ -367,11 +367,11 @@ mod tests {
     fn maps_come_from_json() {
         let config = with_env(&[
             (
-                "MCIM_SCHEDULE",
+                "SCHEDULE",
                 r#"{"modrinth-tags":{"cron":"0 0 * * *","args":"modrinth tags"}}"#,
             ),
             (
-                "MCIM_DOMAIN_RATE_LIMITS",
+                "DOMAIN_RATE_LIMITS",
                 r#"{"api.modrinth.com":{"capacity":100,"refill_rate":3}}"#,
             ),
         ])
@@ -397,7 +397,7 @@ mod tests {
     fn empty_value_is_not_an_override() {
         let mut config = parse_only(r#"{"curseforge_api_key": "real"}"#);
         let map: HashMap<String, String> =
-            [("MCIM_CURSEFORGE_API_KEY".to_string(), String::new())].into();
+            [("CURSEFORGE_API_KEY".to_string(), String::new())].into();
         config
             .apply_overrides(&Env(|key: &str| map.get(key).cloned()))
             .expect("覆盖失败");
@@ -407,7 +407,7 @@ mod tests {
     /// 值写错要当场报出来，不能默默忽略后按默认值跑
     #[test]
     fn unparsable_value_is_an_error() {
-        assert!(with_env(&[("MCIM_MAX_WORKERS", "很多")]).is_err());
-        assert!(with_env(&[("MCIM_SCHEDULE", "not json")]).is_err());
+        assert!(with_env(&[("MAX_WORKERS", "很多")]).is_err());
+        assert!(with_env(&[("SCHEDULE", "not json")]).is_err());
     }
 }

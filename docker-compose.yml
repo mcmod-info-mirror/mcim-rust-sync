@@ -17,10 +17,14 @@ services:
 
       MONGODB_HOST: localhost
       MONGODB_PORT: 27017
+      MONGODB_AUTH: true
+      MONGODB_USER: ${MONGODB_USER:?}
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:?}
       MONGODB_DATABASE: mcim_backend
 
       REDIS_HOST: localhost
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
       REDIS_DATABASE: 0
 
       MAX_WORKERS: 8
