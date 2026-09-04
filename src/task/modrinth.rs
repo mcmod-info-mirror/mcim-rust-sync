@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use bson::doc;
+use futures::StreamExt;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_with::serde_as;
@@ -115,19 +116,22 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let mr = app.modrinth();
     let chunk = app.config.modrinth_chunk_size;
 
-    let local: Vec<ProjectStamp> = app
+    let mut batches = app
         .db
-        .stream_all(
+        .chunked_all::<ProjectStamp>(
             collection::MODRINTH_PROJECTS,
             doc! { "_id": 1, "updated": 1, "versions": 1, "game_versions": 1 },
+            chunk.max(1),
         )
         .await?;
-    tracing::info!(count = local.len(), "库内项目总数");
 
+    let mut total = 0usize;
     let mut outdated = Vec::new();
     let mut dead = Vec::new();
     let mut skipped = 0usize;
-    for batch in local.chunks(chunk.max(1)) {
+    while let Some(batch) = batches.next().await {
+        let batch = batch?;
+        total += batch.len();
         let ids: Vec<String> = batch.iter().map(|item| item.id.clone()).collect();
         let remote = match mr.api().get_projects(&ids).await {
             Ok(value) => value,
@@ -149,7 +153,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         }
 
         let alive: HashSet<&str> = remote.iter().map(|item| item.id.as_str()).collect();
-        for item in batch {
+        for item in &batch {
             if !alive.contains(item.id.as_str()) {
                 dead.push(item.id.clone());
             }
@@ -177,7 +181,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
     }
     let removed = remove_dead(&mr, &dead).await?;
-    tracing::info!(count = outdated.len(), removed, "需要刷新的项目");
+    tracing::info!(total, count = outdated.len(), removed, "需要刷新的项目");
 
     let report = mr.sync_projects(&outdated).await;
     let summary = summarize(&report);
@@ -211,17 +215,36 @@ async fn remove_dead(mr: &ModrinthSync, dead: &[String]) -> Result<usize> {
     Ok(removed)
 }
 
+/// 一次取多少个项目 id 出来同步
+///
+/// 只是为了不把十几万个 id 和同样多的结果一直攥在手里，
+/// 取得比并发数大得多，块尾等落单请求的损耗可以忽略
+const REFRESH_FULL_CHUNK: usize = 1000;
+
 pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
     let mr = app.modrinth();
-    let local: Vec<ProjectStamp> = app
+    let mut batches = app
         .db
-        .stream_all(collection::MODRINTH_PROJECTS, doc! { "_id": 1 })
+        .chunked_all::<ProjectStamp>(
+            collection::MODRINTH_PROJECTS,
+            doc! { "_id": 1 },
+            REFRESH_FULL_CHUNK,
+        )
         .await?;
-    let ids: Vec<String> = local.into_iter().map(|item| item.id).collect();
-    tracing::info!(count = ids.len(), "开始全量刷新");
+    tracing::info!("开始全量刷新");
 
-    let report = mr.sync_projects(&ids).await;
-    let summary = summarize(&report);
+    let mut summary = TaskSummary::default();
+    while let Some(batch) = batches.next().await {
+        let ids: Vec<String> = batch?.into_iter().map(|item| item.id).collect();
+        let report = mr.sync_projects(&ids).await;
+        let part = summarize(&report);
+        summary.total += part.total;
+        summary.synced += part.synced;
+        summary.not_found += part.not_found;
+        summary.skipped += part.skipped;
+        summary.failed += part.failed;
+        tracing::info!(done = summary.total, "全量刷新进度");
+    }
     Ok(summary)
 }
 

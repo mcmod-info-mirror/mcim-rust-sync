@@ -349,3 +349,38 @@ async fn modrinth_search_discovers_projects() {
             > 0
     );
 }
+
+/// 分块遍历必须覆盖整个集合，不能漏掉最后不满一块的尾巴
+///
+/// 库里塞 250 个上游不存在的项目、分块大小 100，也就是 3 块。
+/// 上游对这些 id 全部返回空，所以「全部被判定为已删除」等价于
+/// 「三块都被处理到了」——漏掉任何一块都会有残留
+#[tokio::test]
+async fn refresh_walks_every_chunk() {
+    let Some(app) = app("mcim_task_mr_chunks", 8).await else {
+        return;
+    };
+    reset(&app, &[collection::MODRINTH_PROJECTS], &[]).await;
+
+    let template: Vec<mr::Project> = load("db_modrinth_projects.json");
+    let seeded: Vec<mr::Project> = (0..250)
+        .map(|i| {
+            let mut project = template[0].clone();
+            project.id = format!("zzTest{:04}", i);
+            project
+        })
+        .collect();
+    app.db
+        .upsert_many(collection::MODRINTH_PROJECTS, &seeded, 8)
+        .await
+        .expect("写入夹具失败");
+    assert_eq!(
+        app.db.count(collection::MODRINTH_PROJECTS).await.unwrap(),
+        250
+    );
+
+    run(&app, "modrinth refresh").await;
+
+    let left = app.db.count(collection::MODRINTH_PROJECTS).await.unwrap();
+    assert_eq!(left, 0, "还剩 {} 个没被处理到，说明有块被漏掉", left);
+}

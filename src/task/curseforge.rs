@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use bson::doc;
+use futures::StreamExt;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_with::serde_as;
@@ -156,18 +157,21 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
     let chunk = app.config.curseforge_chunk_size;
 
-    let local: Vec<ModStamp> = app
+    let mut batches = app
         .db
-        .stream_all(
+        .chunked_all::<ModStamp>(
             collection::CURSEFORGE_MODS,
             doc! { "_id": 1, "dateModified": 1 },
+            chunk.max(1),
         )
         .await?;
-    tracing::info!(count = local.len(), "库内 mod 总数");
 
+    let mut total = 0usize;
     let mut outdated = Vec::new();
     let mut skipped = 0usize;
-    for batch in local.chunks(chunk.max(1)) {
+    while let Some(batch) = batches.next().await {
+        let batch = batch?;
+        total += batch.len();
         let ids: Vec<i32> = batch
             .iter()
             .map(|item| item.id)
@@ -218,7 +222,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     if skipped > 0 {
         tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
     }
-    tracing::info!(count = outdated.len(), "需要刷新的 mod");
+    tracing::info!(total, count = outdated.len(), "需要刷新的 mod");
     let report = cf.sync_mods(&outdated).await;
     let summary = TaskSummary {
         total: report.total(),

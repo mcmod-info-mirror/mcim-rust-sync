@@ -1,5 +1,6 @@
 use bson::{Document, doc};
 use chrono::{DateTime, Utc};
+use futures::Stream;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use mongodb::options::ClientOptions;
 use mongodb::{Client, Collection};
@@ -100,20 +101,33 @@ impl Database {
         Ok(documents.len() as u64)
     }
 
-    /// 流式遍历整个集合，只取需要的字段
+    /// 分块遍历整个集合，只取需要的字段
     ///
-    /// 取代 Python 版无排序的 skip/limit 分页，后者在并发写入时会漏读或重读
-    pub async fn stream_all<T>(&self, name: &str, projection: Document) -> Result<Vec<T>>
+    /// 取代 Python 版无排序的 skip/limit 分页，后者在并发写入时会漏读或重读。
+    /// 不能一次性 collect 成 Vec：`modrinth_projects` 连 versions 与
+    /// game_versions 两个数组有两百多 MB，几个刷新任务并发就把容器撑爆
+    pub async fn chunked_all<T>(
+        &self,
+        name: &str,
+        projection: Document,
+        size: usize,
+    ) -> Result<impl Stream<Item = Result<Vec<T>>> + Unpin>
     where
         T: DeserializeOwned + Send + Sync,
     {
-        let collection = self.collection::<T>(name);
-        let cursor = collection
+        let cursor = self
+            .collection::<T>(name)
             .find(doc! {})
             .projection(projection)
             .batch_size(1000)
             .await?;
-        Ok(cursor.try_collect().await?)
+
+        Ok(Box::pin(Box::pin(cursor).chunks(size.max(1)).map(|batch| {
+            batch
+                .into_iter()
+                .collect::<std::result::Result<Vec<T>, _>>()
+                .map_err(Error::from)
+        })))
     }
 
     /// 找出这批 id 里已经入库的部分
