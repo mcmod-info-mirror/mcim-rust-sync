@@ -15,6 +15,13 @@ const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
 /// 任务整体失败，没跑完
 const EXIT_ERROR: u8 = 2;
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
