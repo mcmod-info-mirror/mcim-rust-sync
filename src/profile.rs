@@ -25,20 +25,22 @@ pub fn snapshot(label: &str, project_id: Option<&str>) {
     #[cfg(not(target_env = "msvc"))]
     let jemalloc = {
         let _ = epoch::advance();
-        let profiling = [
-            (
-                "config.prof",
-                tikv_jemalloc_ctl::raw::read::<bool>(b"config.prof\0"),
-            ),
-            (
-                "opt.prof",
-                tikv_jemalloc_ctl::raw::read::<bool>(b"opt.prof\0"),
-            ),
-            (
-                "prof.active",
-                tikv_jemalloc_ctl::raw::read::<bool>(b"prof.active\0"),
-            ),
-        ];
+        let profiling = unsafe {
+            [
+                (
+                    "config.prof",
+                    tikv_jemalloc_ctl::raw::read::<bool>(b"config.prof\0"),
+                ),
+                (
+                    "opt.prof",
+                    tikv_jemalloc_ctl::raw::read::<bool>(b"opt.prof\0"),
+                ),
+                (
+                    "prof.active",
+                    tikv_jemalloc_ctl::raw::read::<bool>(b"prof.active\0"),
+                ),
+            ]
+        };
         tracing::debug!(?profiling, "jemalloc profiling capability");
         format!(
             " allocated={} active={} resident={}",
