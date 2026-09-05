@@ -45,29 +45,35 @@ impl Database {
             return Ok(0);
         }
 
-        let documents = items
-            .iter()
-            .map(|item| bson::serialize_to_document(item).map_err(Error::from))
-            .collect::<Result<Vec<Document>>>()?;
-
         let collection = self.collection::<Document>(name);
-        stream::iter(documents)
-            .map(|document| {
-                let collection = collection.clone();
-                async move {
-                    let id = document.get("_id").cloned().ok_or_else(|| {
-                        Error::Config(format!("{} 的文档缺少 _id", collection.name()))
-                    })?;
-                    collection
-                        .replace_one(doc! { "_id": id }, document)
-                        .upsert(true)
-                        .await?;
-                    Ok::<(), Error>(())
-                }
-            })
-            .buffer_unordered(concurrency.max(1))
-            .try_fold(0u64, |count, ()| async move { Ok(count + 1) })
-            .await
+        let mut written = 0u64;
+        // Do not serialize the whole input slice at once. Large Modrinth projects
+        // contain thousands of files and the serialized BSON duplicates the input.
+        for batch in items.chunks(64) {
+            let documents = batch
+                .iter()
+                .map(|item| bson::serialize_to_document(item).map_err(Error::from))
+                .collect::<Result<Vec<Document>>>()?;
+
+            written += stream::iter(documents)
+                .map(|document| {
+                    let collection = collection.clone();
+                    async move {
+                        let id = document.get("_id").cloned().ok_or_else(|| {
+                            Error::Config(format!("{} 的文档缺少 _id", collection.name()))
+                        })?;
+                        collection
+                            .replace_one(doc! { "_id": id }, document)
+                            .upsert(true)
+                            .await?;
+                        Ok::<(), Error>(())
+                    }
+                })
+                .buffer_unordered(concurrency.max(1))
+                .try_fold(0u64, |count, ()| async move { Ok(count + 1) })
+                .await?;
+        }
+        Ok(written)
     }
 
     /// 整表刷新无主键的字典表
@@ -119,15 +125,17 @@ impl Database {
             .collection::<T>(name)
             .find(doc! {})
             .projection(projection)
-            .batch_size(1000)
+            .batch_size(size.max(1) as u32)
             .await?;
 
-        Ok(Box::pin(Box::pin(cursor).chunks(size.max(1)).map(|batch| {
-            batch
-                .into_iter()
-                .collect::<std::result::Result<Vec<T>, _>>()
-                .map_err(Error::from)
-        })))
+        Ok(Box::pin(Box::pin(cursor).chunks(size.max(1)).map(
+            |batch| {
+                batch
+                    .into_iter()
+                    .collect::<std::result::Result<Vec<T>, _>>()
+                    .map_err(Error::from)
+            },
+        )))
     }
 
     /// 找出这批 id 里已经入库的部分
@@ -191,7 +199,10 @@ impl Database {
     }
 
     pub async fn delete_many(&self, name: &str, filter: Document) -> Result<u64> {
-        let result = self.collection::<Document>(name).delete_many(filter).await?;
+        let result = self
+            .collection::<Document>(name)
+            .delete_many(filter)
+            .await?;
         Ok(result.deleted_count)
     }
 
@@ -201,12 +212,24 @@ impl Database {
 
         let plan: &[(&str, Document, &str)] = &[
             ("curseforge_files", doc! { "modId": 1 }, "modId_1"),
-            ("curseforge_files", doc! { "fileFingerprint": 1 }, "fileFingerprint_1"),
+            (
+                "curseforge_files",
+                doc! { "fileFingerprint": 1 },
+                "fileFingerprint_1",
+            ),
             ("curseforge_categories", doc! { "gameId": 1 }, "gameId_1"),
             ("modrinth_projects", doc! { "slug": 1 }, "slug_1"),
-            ("modrinth_versions", doc! { "project_id": 1 }, "project_id_1"),
+            (
+                "modrinth_versions",
+                doc! { "project_id": 1 },
+                "project_id_1",
+            ),
             ("curseforge_mods", doc! { "checked_at": 1 }, "checked_at_1"),
-            ("modrinth_projects", doc! { "checked_at": 1 }, "checked_at_1"),
+            (
+                "modrinth_projects",
+                doc! { "checked_at": 1 },
+                "checked_at_1",
+            ),
             ("modrinth_files", doc! { "_id.sha1": 1 }, "_id.sha1_1"),
             ("modrinth_files", doc! { "_id.sha512": 1 }, "_id.sha512_1"),
             ("modrinth_files", doc! { "version_id": 1 }, "version_id_1"),
@@ -221,11 +244,7 @@ impl Database {
         for &(collection, ref keys, name) in plan {
             let model = IndexModel::builder()
                 .keys(keys.clone())
-                .options(
-                    IndexOptions::builder()
-                        .name(Some(name.to_string()))
-                        .build(),
-                )
+                .options(IndexOptions::builder().name(Some(name.to_string())).build())
                 .build();
 
             let index_name = self
