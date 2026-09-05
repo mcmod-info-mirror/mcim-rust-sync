@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use bson::doc;
-use futures::StreamExt;
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use serde::Deserialize;
 use serde_with::serde_as;
 
@@ -47,7 +47,9 @@ fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
     !same_set(local.game_versions.as_ref(), remote.game_versions.as_ref())
 }
 
-fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>) -> TaskSummary {
+fn summarize(
+    report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>,
+) -> TaskSummary {
     TaskSummary {
         total: report.total(),
         synced: report.synced.len(),
@@ -74,8 +76,7 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
             Ok(versions) => targets.extend(versions.into_iter().map(|v| v.project_id)),
             Err(error) => {
                 tracing::warn!(%error, count = batch.len(), "批量取版本失败");
-                summary.requeued +=
-                    requeue(&app.queues, key::MODRINTH_VERSION_IDS, batch).await?;
+                summary.requeued += requeue(&app.queues, key::MODRINTH_VERSION_IDS, batch).await?;
             }
         }
     }
@@ -114,6 +115,21 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
 /// 增量刷新：比对 updated / versions / game_versions，同时清理上游已删除的项目
 pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let mr = app.modrinth();
+
+    // Diagnostic escape hatch: exercise the real project sync without waiting
+    // for the full remote project scan to reach a known large project.
+    if let Ok(project_id) = std::env::var("MCIM_ONLY_PROJECT_ID") {
+        let project_id = project_id.trim().to_string();
+        if !project_id.is_empty() {
+            tracing::warn!(
+                project_id,
+                "diagnostic mode: syncing only one Modrinth project"
+            );
+            let report = mr.sync_projects(&[project_id]).await;
+            return Ok(summarize(&report));
+        }
+    }
+
     let chunk = app.config.modrinth_chunk_size;
 
     let mut batches = app
@@ -158,10 +174,8 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
                 dead.push(item.id.clone());
             }
         }
-        let local_stamps: HashMap<&str, &ProjectStamp> = batch
-            .iter()
-            .map(|item| (item.id.as_str(), item))
-            .collect();
+        let local_stamps: HashMap<&str, &ProjectStamp> =
+            batch.iter().map(|item| (item.id.as_str(), item)).collect();
         for value in &remote {
             if let Some(item) = local_stamps.get(value.id.as_str())
                 && is_outdated(item, value)
@@ -399,10 +413,6 @@ mod tests {
         let remote = project("2026-06-09T23:48:35Z", &["b", "a"], &["1.21", "1.20"]);
         assert!(!is_outdated(&local, &remote));
     }
-
-
-
-
 
     #[test]
     fn set_comparison_ignores_order() {
