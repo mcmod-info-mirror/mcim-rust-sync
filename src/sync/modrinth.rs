@@ -123,11 +123,11 @@ impl ModrinthSync {
     async fn sync_project_versions(&self, project_id: &str, declared: usize) -> Result<usize> {
         let profile_project = crate::profile::project_enabled(project_id);
         if profile_project {
-            crate::profile::dump("before-versions-request", Some(project_id));
+            crate::profile::dump("before-versions-request", Some(project_id)).await;
         }
         let versions = self.api.get_project_versions(project_id).await?;
         if profile_project {
-            crate::profile::dump("after-versions-response", Some(project_id));
+            crate::profile::dump("after-versions-response", Some(project_id)).await;
         }
         if is_incomplete_versions(versions.len(), declared) {
             return Err(Error::Config(format!(
@@ -164,21 +164,21 @@ impl ModrinthSync {
                 files = file_count,
                 "profile data graph built"
             );
-            crate::profile::dump("after-files-built", Some(project_id));
+            crate::profile::dump("after-files-built", Some(project_id)).await;
         }
 
         self.db
             .upsert_many(collection::MODRINTH_FILES, &files, self.concurrency)
             .await?;
         if profile_project {
-            crate::profile::dump("after-files-upsert", Some(project_id));
+            crate::profile::dump("after-files-upsert", Some(project_id)).await;
         }
         drop(files);
         self.db
             .upsert_many(collection::MODRINTH_VERSIONS, &versions, self.concurrency)
             .await?;
         if profile_project {
-            crate::profile::dump("after-versions-upsert", Some(project_id));
+            crate::profile::dump("after-versions-upsert", Some(project_id)).await;
         }
 
         let kept: Vec<&str> = versions.iter().map(|v| v.id.as_str()).collect();

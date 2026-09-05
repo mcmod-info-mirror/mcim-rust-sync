@@ -17,6 +17,11 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[cfg(not(target_env = "msvc"))]
+#[allow(non_upper_case_globals)]
+#[unsafe(export_name = "malloc_conf")]
+static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 /// 跑完了，但有个别条目没同步成功
 const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
 /// 任务整体失败，没跑完

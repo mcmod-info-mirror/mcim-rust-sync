@@ -1,4 +1,3 @@
-use std::ffi::CString;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,25 +24,17 @@ pub fn snapshot(label: &str, project_id: Option<&str>) {
     #[cfg(not(target_env = "msvc"))]
     let jemalloc = {
         let _ = epoch::advance();
-        let profiling = unsafe {
-            [
-                (
-                    "config.prof",
-                    tikv_jemalloc_ctl::raw::read::<bool>(b"config.prof\0"),
-                ),
-                (
-                    "opt.prof",
-                    tikv_jemalloc_ctl::raw::read::<bool>(b"opt.prof\0"),
-                ),
-                (
-                    "prof.active",
-                    tikv_jemalloc_ctl::raw::read::<bool>(b"prof.active\0"),
-                ),
-            ]
+        let capability = unsafe {
+            (
+                tikv_jemalloc_ctl::raw::read::<bool>(b"config.prof\0"),
+                tikv_jemalloc_ctl::raw::read::<bool>(b"opt.prof\0"),
+                tikv_jemalloc_ctl::raw::read::<bool>(b"opt.prof_active\0"),
+                tikv_jemalloc_ctl::raw::read::<bool>(b"prof.active\0"),
+            )
         };
-        tracing::debug!(?profiling, "jemalloc profiling capability");
+        tracing::info!(?capability, "jemalloc profiling capability");
         format!(
-            " allocated={} active={} resident={}",
+            "allocated={} active={} resident={}",
             stats::allocated::read().unwrap_or_default(),
             stats::active::read().unwrap_or_default(),
             stats::resident::read().unwrap_or_default()
@@ -62,7 +53,7 @@ pub fn snapshot(label: &str, project_id: Option<&str>) {
     );
 }
 
-pub fn dump(label: &str, project_id: Option<&str>) {
+pub async fn dump(label: &str, project_id: Option<&str>) {
     if !enabled() {
         return;
     }
@@ -74,23 +65,37 @@ pub fn dump(label: &str, project_id: Option<&str>) {
     }
 
     snapshot(label, project_id);
+
     #[cfg(not(target_env = "msvc"))]
     {
+        let Some(prof_ctl) = jemalloc_pprof::PROF_CTL.as_ref() else {
+            tracing::warn!("jemalloc profiling is not available in this binary");
+            return;
+        };
+
+        let mut prof_ctl = prof_ctl.lock().await;
+        if !prof_ctl.activated() {
+            tracing::warn!("jemalloc profiling is not activated");
+            return;
+        }
+
+        let pprof = match prof_ctl.dump_pprof() {
+            Ok(pprof) => pprof,
+            Err(error) => {
+                tracing::warn!(%error, "jemalloc pprof dump failed");
+                return;
+            }
+        };
+
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|value| value.as_millis())
             .unwrap_or_default();
         let safe_label = label.replace(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-', "_");
-        let name = format!("{stamp}-{safe_label}.heap");
-        let path = dir.join(name);
-        let Ok(path) = CString::new(path.to_string_lossy().as_bytes()) else {
-            return;
-        };
-        let result = unsafe { tikv_jemalloc_ctl::raw::write(b"prof.dump\0", path.as_ptr()) };
-        if let Err(error) = result {
-            tracing::warn!(%error, "jemalloc heap dump failed");
-        } else {
-            tracing::info!(path = %path.to_string_lossy(), "jemalloc heap dump written");
+        let path = dir.join(format!("{stamp}-{safe_label}.pb.gz"));
+        match fs::write(&path, pprof) {
+            Ok(()) => tracing::info!(path = %path.display(), "jemalloc pprof written"),
+            Err(error) => tracing::warn!(%error, ?path, "failed to write jemalloc pprof"),
         }
     }
 }

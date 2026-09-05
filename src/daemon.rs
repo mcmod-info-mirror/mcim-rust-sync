@@ -67,7 +67,7 @@ pub async fn run(app: App) -> Result<()> {
                 log_memory(&jobs);
             }
             _ = profile_tick.tick(), if crate::profile::enabled() => {
-                crate::profile::dump("periodic", None);
+                crate::profile::dump("periodic", None).await;
             }
             _ = tokio::time::sleep(delay) => {
                 spawn_due(&app, &task_gate, &mut jobs, &mut running, Utc::now());
