@@ -45,7 +45,10 @@ impl ModrinthSync {
         Self {
             api,
             db,
-            concurrency: concurrency.max(1),
+            // Each project response can contain a large version/file graph.
+            // Keep the memory-heavy part bounded even if the environment sets
+            // MAX_WORKERS higher.
+            concurrency: concurrency.clamp(1, 2),
         }
     }
 
@@ -118,7 +121,14 @@ impl ModrinthSync {
     /// 后者不能当成真值处理，否则裁剪会把该项目已有的版本和文件全删掉。
     /// 用项目自己声明的 `versions` 长度来区分
     async fn sync_project_versions(&self, project_id: &str, declared: usize) -> Result<usize> {
+        let profile_project = crate::profile::project_enabled(project_id);
+        if profile_project {
+            crate::profile::dump("before-versions-request", Some(project_id));
+        }
         let versions = self.api.get_project_versions(project_id).await?;
+        if profile_project {
+            crate::profile::dump("after-versions-response", Some(project_id));
+        }
         if is_incomplete_versions(versions.len(), declared) {
             return Err(Error::Config(format!(
                 "项目 {} 声明有 {} 个版本，版本接口却返回空，响应不完整",
@@ -146,13 +156,30 @@ impl ModrinthSync {
                 });
             }
         }
+        let file_count = files.len();
+        if profile_project {
+            tracing::info!(
+                project_id,
+                versions = versions.len(),
+                files = file_count,
+                "profile data graph built"
+            );
+            crate::profile::dump("after-files-built", Some(project_id));
+        }
 
         self.db
             .upsert_many(collection::MODRINTH_FILES, &files, self.concurrency)
             .await?;
+        if profile_project {
+            crate::profile::dump("after-files-upsert", Some(project_id));
+        }
+        drop(files);
         self.db
             .upsert_many(collection::MODRINTH_VERSIONS, &versions, self.concurrency)
             .await?;
+        if profile_project {
+            crate::profile::dump("after-versions-upsert", Some(project_id));
+        }
 
         let kept: Vec<&str> = versions.iter().map(|v| v.id.as_str()).collect();
         let removed_versions = self
@@ -173,7 +200,7 @@ impl ModrinthSync {
         tracing::info!(
             project_id,
             versions = versions.len(),
-            files = files.len(),
+            files = file_count,
             removed_versions,
             removed_files,
             "项目版本同步完成"

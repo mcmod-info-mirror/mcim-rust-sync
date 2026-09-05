@@ -7,8 +7,8 @@ use backon::{ExponentialBuilder, Retryable};
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Method;
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -53,10 +53,8 @@ impl HttpClient {
 
         let mut limiters = HashMap::new();
         for (domain, limit) in &config.domain_rate_limits {
-            let refill = NonZeroU32::new(limit.refill_rate.max(1))
-                .expect("refill_rate 已保证非零");
-            let capacity = NonZeroU32::new(limit.capacity.max(1))
-                .expect("capacity 已保证非零");
+            let refill = NonZeroU32::new(limit.refill_rate.max(1)).expect("refill_rate 已保证非零");
+            let capacity = NonZeroU32::new(limit.capacity.max(1)).expect("capacity 已保证非零");
             let quota = Quota::per_second(refill).allow_burst(capacity);
             limiters.insert(domain.clone(), Arc::new(RateLimiter::direct(quota)));
         }
@@ -74,7 +72,8 @@ impl HttpClient {
         query: &[(&str, String)],
         headers: &HeaderMap,
     ) -> Result<T> {
-        self.send(Method::GET, url, query, None::<&()>, headers).await
+        self.send(Method::GET, url, query, None::<&()>, headers)
+            .await
     }
 
     pub async fn post<T: DeserializeOwned, B: Serialize>(
@@ -120,7 +119,18 @@ impl HttpClient {
                 });
             }
 
-            Ok(response.json::<T>().await?)
+            let content_length = response.content_length();
+            let body = response.bytes().await?;
+            let is_version_response = url.contains("/v2/project/") && url.ends_with("/version");
+            if is_version_response {
+                tracing::info!(
+                    url,
+                    content_length,
+                    body_bytes = body.len(),
+                    "received Modrinth project versions response"
+                );
+            }
+            Ok(serde_json::from_slice::<T>(&body)?)
         };
 
         attempt

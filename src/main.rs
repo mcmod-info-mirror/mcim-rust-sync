@@ -10,17 +10,17 @@ use mcim_rust_sync::error::Result;
 use mcim_rust_sync::runner::execute;
 use mcim_rust_sync::{daemon, task::TaskSummary};
 
-/// 跑完了，但有个别条目没同步成功
-const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
-/// 任务整体失败，没跑完
-const EXIT_ERROR: u8 = 2;
-
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+/// 跑完了，但有个别条目没同步成功
+const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
+/// 任务整体失败，没跑完
+const EXIT_ERROR: u8 = 2;
 
 #[tokio::main]
 async fn main() -> ExitCode {

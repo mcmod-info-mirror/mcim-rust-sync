@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::app::App;
@@ -48,13 +50,27 @@ pub async fn run(app: App) -> Result<()> {
     }
 
     let mut running = JoinSet::new();
+    // A task can fan out to several network/database workers and retain large
+    // API responses. Keep those workloads serialized across task types so the
+    // process has one bounded memory peak instead of one peak per schedule.
+    let task_gate = Arc::new(Semaphore::new(1));
     let mut stop = Box::pin(wait_for_stop());
+    let mut memory_tick = tokio::time::interval(Duration::from_secs(30));
+    memory_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut profile_tick = tokio::time::interval(Duration::from_secs(5));
+    profile_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         let delay = until_next(&jobs, Utc::now());
         tokio::select! {
+            _ = memory_tick.tick() => {
+                log_memory(&jobs);
+            }
+            _ = profile_tick.tick(), if crate::profile::enabled() => {
+                crate::profile::dump("periodic", None);
+            }
             _ = tokio::time::sleep(delay) => {
-                spawn_due(&app, &mut jobs, &mut running, Utc::now());
+                spawn_due(&app, &task_gate, &mut jobs, &mut running, Utc::now());
             }
             Some(result) = running.join_next(), if !running.is_empty() => {
                 if let Err(error) = result {
@@ -70,6 +86,53 @@ pub async fn run(app: App) -> Result<()> {
 
     shutdown(running, app.config.shutdown_grace_secs).await;
     Ok(())
+}
+
+/// 低开销记录进程与容器内存，便于把 OOM 时间点和具体任务对应起来。
+fn log_memory(jobs: &[Job]) {
+    let (rss_kb, peak_rss_kb) = proc_memory();
+    let current = read_number("/sys/fs/cgroup/memory.current");
+    let peak = read_number("/sys/fs/cgroup/memory.peak");
+    let events = fs::read_to_string("/sys/fs/cgroup/memory.events")
+        .ok()
+        .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "));
+    let running = jobs
+        .iter()
+        .filter(|job| lock(&job.slot).is_some())
+        .map(|job| job.name.as_str())
+        .collect::<Vec<_>>();
+
+    tracing::info!(
+        rss_kb,
+        peak_rss_kb,
+        cgroup_current_bytes = ?current,
+        cgroup_peak_bytes = ?peak,
+        cgroup_events = ?events,
+        running = ?running,
+        "内存采样"
+    );
+}
+
+fn proc_memory() -> (Option<u64>, Option<u64>) {
+    let status = match fs::read_to_string("/proc/self/status") {
+        Ok(value) => value,
+        Err(_) => return (None, None),
+    };
+    let mut rss = None;
+    let mut peak = None;
+    for line in status.lines() {
+        let mut fields = line.split_whitespace();
+        match fields.next() {
+            Some("VmRSS:") => rss = fields.next().and_then(|value| value.parse().ok()),
+            Some("VmHWM:") => peak = fields.next().and_then(|value| value.parse().ok()),
+            _ => {}
+        }
+    }
+    (rss, peak)
+}
+
+fn read_number(path: &str) -> Option<u64> {
+    fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 /// 把配置里的计划解析成任务，任何一条不合法都直接失败而不是跳过
@@ -113,7 +176,13 @@ fn until_next(jobs: &[Job], now: DateTime<Utc>) -> Duration {
 }
 
 /// 派发所有到期的任务
-fn spawn_due(app: &Arc<App>, jobs: &mut [Job], running: &mut JoinSet<()>, now: DateTime<Utc>) {
+fn spawn_due(
+    app: &Arc<App>,
+    task_gate: &Arc<Semaphore>,
+    jobs: &mut [Job],
+    running: &mut JoinSet<()>,
+    now: DateTime<Utc>,
+) {
     for job in jobs.iter_mut() {
         if job.next > now {
             continue;
@@ -140,9 +209,11 @@ fn spawn_due(app: &Arc<App>, jobs: &mut [Job], running: &mut JoinSet<()>, now: D
         let command = job.command.clone();
         let name = job.name.clone();
         let failures = Arc::clone(&job.failures);
+        let task_gate = Arc::clone(task_gate);
 
         running.spawn(async move {
             let _claim = claim;
+            let _task_permit = task_gate.acquire_owned().await.expect("task gate closed");
             let started = Instant::now();
             tracing::info!(task = %name, "本轮开始");
 
