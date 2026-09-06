@@ -3,6 +3,11 @@ FROM rust:1-slim-trixie AS builder
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir src \
     && echo 'fn main() {}' > src/main.rs \
     && touch src/lib.rs \
