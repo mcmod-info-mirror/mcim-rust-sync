@@ -146,10 +146,12 @@ impl ModrinthSync {
                 });
             }
         }
+        let file_count = files.len();
 
         self.db
             .upsert_many(collection::MODRINTH_FILES, &files, self.concurrency)
             .await?;
+        drop(files);
         self.db
             .upsert_many(collection::MODRINTH_VERSIONS, &versions, self.concurrency)
             .await?;
@@ -173,7 +175,7 @@ impl ModrinthSync {
         tracing::info!(
             project_id,
             versions = versions.len(),
-            files = files.len(),
+            files = file_count,
             removed_versions,
             removed_files,
             "项目版本同步完成"

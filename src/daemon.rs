@@ -113,7 +113,12 @@ fn until_next(jobs: &[Job], now: DateTime<Utc>) -> Duration {
 }
 
 /// 派发所有到期的任务
-fn spawn_due(app: &Arc<App>, jobs: &mut [Job], running: &mut JoinSet<()>, now: DateTime<Utc>) {
+fn spawn_due(
+    app: &Arc<App>,
+    jobs: &mut [Job],
+    running: &mut JoinSet<()>,
+    now: DateTime<Utc>,
+) {
     for job in jobs.iter_mut() {
         if job.next > now {
             continue;

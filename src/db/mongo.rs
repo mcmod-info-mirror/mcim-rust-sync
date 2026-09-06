@@ -45,29 +45,33 @@ impl Database {
             return Ok(0);
         }
 
-        let documents = items
-            .iter()
-            .map(|item| bson::serialize_to_document(item).map_err(Error::from))
-            .collect::<Result<Vec<Document>>>()?;
-
         let collection = self.collection::<Document>(name);
-        stream::iter(documents)
-            .map(|document| {
-                let collection = collection.clone();
-                async move {
-                    let id = document.get("_id").cloned().ok_or_else(|| {
-                        Error::Config(format!("{} 的文档缺少 _id", collection.name()))
-                    })?;
-                    collection
-                        .replace_one(doc! { "_id": id }, document)
-                        .upsert(true)
-                        .await?;
-                    Ok::<(), Error>(())
-                }
-            })
-            .buffer_unordered(concurrency.max(1))
-            .try_fold(0u64, |count, ()| async move { Ok(count + 1) })
-            .await
+        let mut written = 0u64;
+        for batch in items.chunks(64) {
+            let documents = batch
+                .iter()
+                .map(|item| bson::serialize_to_document(item).map_err(Error::from))
+                .collect::<Result<Vec<Document>>>()?;
+
+            written += stream::iter(documents)
+                .map(|document| {
+                    let collection = collection.clone();
+                    async move {
+                        let id = document.get("_id").cloned().ok_or_else(|| {
+                            Error::Config(format!("{} 的文档缺少 _id", collection.name()))
+                        })?;
+                        collection
+                            .replace_one(doc! { "_id": id }, document)
+                            .upsert(true)
+                            .await?;
+                        Ok::<(), Error>(())
+                    }
+                })
+                .buffer_unordered(concurrency.max(1))
+                .try_fold(0u64, |count, ()| async move { Ok(count + 1) })
+                .await?;
+        }
+        Ok(written)
     }
 
     /// 整表刷新无主键的字典表
