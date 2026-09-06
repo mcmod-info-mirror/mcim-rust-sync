@@ -55,6 +55,9 @@ fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::Project
         skipped: report.skipped.len(),
         failed: report.failed.len(),
         requeued: 0,
+        versions: report.synced.iter().map(|item| item.version_count).sum(),
+        files: report.synced.iter().map(|item| item.file_count).sum(),
+        ..Default::default()
     }
 }
 
@@ -184,7 +187,8 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     tracing::info!(total, count = outdated.len(), removed, "需要刷新的项目");
 
     let report = mr.sync_projects(&outdated).await;
-    let summary = summarize(&report);
+    let mut summary = summarize(&report);
+    summary.removed = removed;
     Ok(summary)
 }
 
@@ -243,6 +247,8 @@ pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
         summary.not_found += part.not_found;
         summary.skipped += part.skipped;
         summary.failed += part.failed;
+        summary.versions += part.versions;
+        summary.files += part.files;
         tracing::info!(done = summary.total, "全量刷新进度");
     }
     Ok(summary)
@@ -297,6 +303,9 @@ pub async fn search(app: &App, max_pages: i64, full: bool) -> Result<TaskSummary
             summary.not_found += report.not_found.len();
             summary.skipped += report.skipped.len();
             summary.failed += report.failed.len();
+            summary.versions += report.synced.iter().map(|item| item.version_count).sum::<usize>();
+            summary.files += report.synced.iter().map(|item| item.file_count).sum::<usize>();
+            summary.discovered += fresh.len();
             let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
             summary.requeued += requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
         }

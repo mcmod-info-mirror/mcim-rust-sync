@@ -23,6 +23,9 @@ fn default_modrinth_api() -> String {
 fn default_shutdown_grace_secs() -> u64 {
     60
 }
+fn default_task_api_addr() -> String {
+    "0.0.0.0:9901".to_string()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -160,6 +163,10 @@ pub struct Config {
     /// 收到停止信号后留给在跑任务收尾的秒数
     #[serde(default = "default_shutdown_grace_secs")]
     pub shutdown_grace_secs: u64,
+
+    /// 任务历史 JSON API 监听地址
+    #[serde(default = "default_task_api_addr")]
+    pub task_api_addr: String,
 }
 
 /// 环境变量来源，测试时可以换成别的
@@ -294,6 +301,9 @@ impl Config {
         }
         if let Some(value) = env.parse("SHUTDOWN_GRACE_SECS")? {
             self.shutdown_grace_secs = value;
+        }
+        if let Some(value) = env.text("TASK_API_ADDR") {
+            self.task_api_addr = value;
         }
 
         Ok(())

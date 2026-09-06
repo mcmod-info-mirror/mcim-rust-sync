@@ -17,6 +17,19 @@ use crate::sync::curseforge::CurseForgeSync;
 
 use super::{TaskSummary, requeue, same_second};
 
+fn summarize(report: &crate::sync::Report<i32, crate::sync::curseforge::ModSummary>) -> TaskSummary {
+    TaskSummary {
+        total: report.total(),
+        synced: report.synced.len(),
+        not_found: report.not_found.len(),
+        skipped: report.skipped.len(),
+        failed: report.failed.len(),
+        versions: 0,
+        files: report.synced.iter().map(|item| item.file_count).sum(),
+        ..Default::default()
+    }
+}
+
 /// 队列里混进过极小的 modid，实际不属于 Minecraft
 const MIN_MOD_ID: i32 = 30000;
 
@@ -74,11 +87,13 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     tracing::info!(count = targets.len(), "开始同步队列命中的 mod");
 
     let report = cf.sync_mods(&targets).await;
-    summary.total = report.total();
-    summary.synced = report.synced.len();
-    summary.not_found = report.not_found.len();
-    summary.skipped = report.skipped.len();
-    summary.failed = report.failed.len();
+    let report_summary = summarize(&report);
+    summary.total = report_summary.total;
+    summary.synced = report_summary.synced;
+    summary.not_found = report_summary.not_found;
+    summary.skipped = report_summary.skipped;
+    summary.failed = report_summary.failed;
+    summary.files = report_summary.files;
 
     // 只有真正失败的才放回，404 与不收录的直接丢弃，避免无限循环
     let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.to_string()).collect();
@@ -224,14 +239,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     }
     tracing::info!(total, count = outdated.len(), "需要刷新的 mod");
     let report = cf.sync_mods(&outdated).await;
-    let summary = TaskSummary {
-        total: report.total(),
-        synced: report.synced.len(),
-        not_found: report.not_found.len(),
-        skipped: report.skipped.len(),
-        failed: report.failed.len(),
-        requeued: 0,
-    };
+    let summary = summarize(&report);
 
     Ok(summary)
 }
@@ -300,6 +308,8 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
                     summary.not_found += report.not_found.len();
                     summary.skipped += report.skipped.len();
                     summary.failed += report.failed.len();
+                    summary.files += report.synced.iter().map(|item| item.file_count).sum::<usize>();
+                    summary.discovered += fresh.len();
                     let retry: Vec<String> =
                         report.failed.iter().map(|(id, _)| id.to_string()).collect();
                     summary.requeued +=

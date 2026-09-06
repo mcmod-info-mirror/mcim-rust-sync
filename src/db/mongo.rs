@@ -9,6 +9,8 @@ use serde::de::DeserializeOwned;
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::models::collection;
+use crate::models::task_run::TaskRun;
 
 #[derive(Clone)]
 pub struct Database {
@@ -126,12 +128,14 @@ impl Database {
             .batch_size(1000)
             .await?;
 
-        Ok(Box::pin(Box::pin(cursor).chunks(size.max(1)).map(|batch| {
-            batch
-                .into_iter()
-                .collect::<std::result::Result<Vec<T>, _>>()
-                .map_err(Error::from)
-        })))
+        Ok(Box::pin(Box::pin(cursor).chunks(size.max(1)).map(
+            |batch| {
+                batch
+                    .into_iter()
+                    .collect::<std::result::Result<Vec<T>, _>>()
+                    .map_err(Error::from)
+            },
+        )))
     }
 
     /// 找出这批 id 里已经入库的部分
@@ -195,8 +199,79 @@ impl Database {
     }
 
     pub async fn delete_many(&self, name: &str, filter: Document) -> Result<u64> {
-        let result = self.collection::<Document>(name).delete_many(filter).await?;
+        let result = self
+            .collection::<Document>(name)
+            .delete_many(filter)
+            .await?;
         Ok(result.deleted_count)
+    }
+
+    pub async fn insert_task_run(&self, run: &TaskRun) -> Result<()> {
+        self.collection::<TaskRun>(collection::TASK_RUNS)
+            .insert_one(run)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_task_run(&self, run: &TaskRun) -> Result<()> {
+        self.collection::<TaskRun>(collection::TASK_RUNS)
+            .replace_one(doc! { "_id": run.id }, run)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn mark_running_task_runs_interrupted(
+        &self,
+        finished_at: DateTime<Utc>,
+    ) -> Result<u64> {
+        let result = self
+            .collection::<Document>(collection::TASK_RUNS)
+            .update_many(
+                doc! { "status": "running" },
+                doc! {
+                    "$set": {
+                        "status": "interrupted",
+                        "finished_at": bson::DateTime::from_chrono(finished_at),
+                        "error": "process restarted before task completion"
+                    }
+                },
+            )
+            .await?;
+        Ok(result.modified_count)
+    }
+
+    pub async fn list_task_runs(
+        &self,
+        task: Option<&str>,
+        status: Option<&str>,
+        started_after: Option<DateTime<Utc>>,
+        started_before: Option<DateTime<Utc>>,
+        limit: i64,
+    ) -> Result<Vec<TaskRun>> {
+        let mut filter = Document::new();
+        if let Some(task) = task {
+            filter.insert("task", task);
+        }
+        if let Some(status) = status {
+            filter.insert("status", status);
+        }
+        if started_after.is_some() || started_before.is_some() {
+            let mut range = Document::new();
+            if let Some(value) = started_after {
+                range.insert("$gte", bson::DateTime::from_chrono(value));
+            }
+            if let Some(value) = started_before {
+                range.insert("$lte", bson::DateTime::from_chrono(value));
+            }
+            filter.insert("started_at", range);
+        }
+        let cursor = self
+            .collection::<TaskRun>(collection::TASK_RUNS)
+            .find(filter)
+            .sort(doc! { "started_at": -1 })
+            .limit(limit.clamp(1, 500))
+            .await?;
+        Ok(cursor.try_collect().await?)
     }
 
     pub async fn ensure_indexes(&self) -> Result<Vec<String>> {
@@ -205,12 +280,24 @@ impl Database {
 
         let plan: &[(&str, Document, &str)] = &[
             ("curseforge_files", doc! { "modId": 1 }, "modId_1"),
-            ("curseforge_files", doc! { "fileFingerprint": 1 }, "fileFingerprint_1"),
+            (
+                "curseforge_files",
+                doc! { "fileFingerprint": 1 },
+                "fileFingerprint_1",
+            ),
             ("curseforge_categories", doc! { "gameId": 1 }, "gameId_1"),
             ("modrinth_projects", doc! { "slug": 1 }, "slug_1"),
-            ("modrinth_versions", doc! { "project_id": 1 }, "project_id_1"),
+            (
+                "modrinth_versions",
+                doc! { "project_id": 1 },
+                "project_id_1",
+            ),
             ("curseforge_mods", doc! { "checked_at": 1 }, "checked_at_1"),
-            ("modrinth_projects", doc! { "checked_at": 1 }, "checked_at_1"),
+            (
+                "modrinth_projects",
+                doc! { "checked_at": 1 },
+                "checked_at_1",
+            ),
             ("modrinth_files", doc! { "_id.sha1": 1 }, "_id.sha1_1"),
             ("modrinth_files", doc! { "_id.sha512": 1 }, "_id.sha512_1"),
             ("modrinth_files", doc! { "version_id": 1 }, "version_id_1"),
@@ -219,17 +306,23 @@ impl Database {
                 doc! { "project_id": 1, "version_id": 1, "filename": 1 },
                 "project_id_1_version_id_1_filename_1",
             ),
+            (
+                "task_runs",
+                doc! { "task": 1, "started_at": -1 },
+                "task_1_started_at_-1",
+            ),
+            (
+                "task_runs",
+                doc! { "status": 1, "started_at": -1 },
+                "status_1_started_at_-1",
+            ),
         ];
 
         let mut created = Vec::with_capacity(plan.len());
         for &(collection, ref keys, name) in plan {
             let model = IndexModel::builder()
                 .keys(keys.clone())
-                .options(
-                    IndexOptions::builder()
-                        .name(Some(name.to_string()))
-                        .build(),
-                )
+                .options(IndexOptions::builder().name(Some(name.to_string())).build())
                 .build();
 
             let index_name = self

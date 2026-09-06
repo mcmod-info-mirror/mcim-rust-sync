@@ -11,7 +11,9 @@ use crate::app::App;
 use crate::cli::Command;
 use crate::config::ScheduleEntry;
 use crate::error::{Error, Result};
-use crate::runner::execute;
+use crate::metrics::Metrics;
+use crate::runner::execute_with_history;
+use crate::task_api::ScheduleState;
 
 /// 单次睡眠上限，系统时钟被调整后不至于一直睡在旧的到期时刻上
 const MAX_SLEEP: Duration = Duration::from_secs(60);
@@ -32,16 +34,22 @@ struct Job {
 }
 
 /// 常驻，按 schedule 定时执行任务
-pub async fn run(app: App) -> Result<()> {
+pub async fn run(app: App, metrics: Arc<Metrics>, schedule: ScheduleState) -> Result<()> {
     let app = Arc::new(app);
     let mut jobs = build(&app.config.schedule, Utc::now())?;
     if jobs.is_empty() {
         return Err(Error::Config("schedule 是空的，没有任务可排".to_string()));
     }
+    schedule.replace(jobs.iter().map(|job| (job.name.clone(), job.next)));
 
     // 索引幂等，启动时一次建好，免得某次任务跑到一半才触发首次构建
     for name in app.db.ensure_indexes().await? {
         tracing::info!(index = %name, "索引就绪");
+    }
+    match app.db.mark_running_task_runs_interrupted(Utc::now()).await {
+        Ok(count) if count > 0 => tracing::warn!(count, "已将上次进程遗留的任务标记为 interrupted"),
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "清理遗留任务记录失败"),
     }
     for job in &jobs {
         tracing::info!(task = %job.name, next = %job.next, "已排期");
@@ -49,12 +57,18 @@ pub async fn run(app: App) -> Result<()> {
 
     let mut running = JoinSet::new();
     let mut stop = Box::pin(wait_for_stop());
+    metrics.refresh_memory();
+    let mut memory_tick = tokio::time::interval(Duration::from_secs(5));
+    memory_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         let delay = until_next(&jobs, Utc::now());
         tokio::select! {
+            _ = memory_tick.tick() => {
+                metrics.refresh_memory();
+            }
             _ = tokio::time::sleep(delay) => {
-                spawn_due(&app, &mut jobs, &mut running, Utc::now());
+                spawn_due(&app, &metrics, &schedule, &mut jobs, &mut running, Utc::now());
             }
             Some(result) = running.join_next(), if !running.is_empty() => {
                 if let Err(error) = result {
@@ -115,6 +129,8 @@ fn until_next(jobs: &[Job], now: DateTime<Utc>) -> Duration {
 /// 派发所有到期的任务
 fn spawn_due(
     app: &Arc<App>,
+    metrics: &Arc<Metrics>,
+    schedule: &ScheduleState,
     jobs: &mut [Job],
     running: &mut JoinSet<()>,
     now: DateTime<Utc>,
@@ -132,10 +148,15 @@ fn spawn_due(
                 job.next = DateTime::<Utc>::MAX_UTC;
             }
         }
+        schedule.set_next(&job.name, job.next);
 
         let claim = match claim(&job.slot) {
             Ok(claim) => claim,
             Err(elapsed) => {
+                metrics
+                    .task_overlap_skips
+                    .get_or_create(&metrics.task(&job.name))
+                    .inc();
                 tracing::warn!(task = %job.name, ?elapsed, "上一轮还没跑完，跳过本轮");
                 continue;
             }
@@ -145,15 +166,44 @@ fn spawn_due(
         let command = job.command.clone();
         let name = job.name.clone();
         let failures = Arc::clone(&job.failures);
+        let metrics = Arc::clone(metrics);
 
         running.spawn(async move {
             let _claim = claim;
             let started = Instant::now();
+            let labels = metrics.task(&name);
+            metrics.task_running.get_or_create(&labels).set(1);
             tracing::info!(task = %name, "本轮开始");
 
-            match execute(&app, &command).await {
+            match execute_with_history(&app, &name, &command).await {
                 Ok(summary) => {
+                    metrics.record_summary(&name, &command, &summary);
                     failures.store(0, Ordering::Relaxed);
+                    metrics.task_failures_streak.get_or_create(&labels).set(0);
+                    metrics
+                        .task_duration
+                        .get_or_create(&labels)
+                        .observe(started.elapsed().as_secs_f64());
+                    let result = if summary.is_clean() {
+                        "success"
+                    } else {
+                        "partial_failure"
+                    };
+                    metrics
+                        .task_runs
+                        .get_or_create(&metrics.task_result(&name, result))
+                        .inc();
+                    metrics
+                        .task_last_run_timestamp
+                        .get_or_create(&labels)
+                        .set(Metrics::now_seconds());
+                    metrics.record_last_result(&name, result);
+                    if summary.is_clean() {
+                        metrics
+                            .task_last_success_timestamp
+                            .get_or_create(&labels)
+                            .set(Metrics::now_seconds());
+                    }
                     if summary.is_clean() {
                         tracing::info!(task = %name, elapsed = ?started.elapsed(), "本轮结束");
                     } else {
@@ -167,6 +217,23 @@ fn spawn_due(
                 }
                 Err(error) => {
                     let streak = failures.fetch_add(1, Ordering::Relaxed) + 1;
+                    metrics
+                        .task_failures_streak
+                        .get_or_create(&labels)
+                        .set(streak as i64);
+                    metrics
+                        .task_duration
+                        .get_or_create(&labels)
+                        .observe(started.elapsed().as_secs_f64());
+                    metrics
+                        .task_runs
+                        .get_or_create(&metrics.task_result(&name, "error"))
+                        .inc();
+                    metrics
+                        .task_last_run_timestamp
+                        .get_or_create(&labels)
+                        .set(Metrics::now_seconds());
+                    metrics.record_last_result(&name, "error");
                     tracing::error!(
                         task = %name,
                         %error,
@@ -176,6 +243,7 @@ fn spawn_due(
                     );
                 }
             }
+            metrics.task_running.get_or_create(&labels).set(0);
         });
     }
 }
