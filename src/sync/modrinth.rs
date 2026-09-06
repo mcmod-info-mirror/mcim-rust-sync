@@ -16,6 +16,7 @@ pub struct ProjectSummary {
     pub id: String,
     pub slug: String,
     pub version_count: usize,
+    pub file_count: usize,
 }
 
 /// 删除一个项目时各集合实际删掉的条数
@@ -67,7 +68,7 @@ impl ModrinthSync {
 
         // 项目自己声明的版本数，用来判断空响应是真的没版本还是响应不完整
         let declared = project.versions.as_ref().map_or(0, Vec::len);
-        let version_count = match self.sync_project_versions(project_id, declared).await {
+        let (version_count, file_count) = match self.sync_project_versions(project_id, declared).await {
             Ok(count) => count,
             // 取完项目再取版本，这中间项目可能已经被删了，这种不该重试
             Err(e) if e.is_not_found() => {
@@ -91,6 +92,7 @@ impl ModrinthSync {
             id: project_id.to_string(),
             slug,
             version_count,
+            file_count,
         }))
     }
 
@@ -117,7 +119,7 @@ impl ModrinthSync {
     /// 版本列表为空有两种可能：项目确实一个版本都没发过，或者上游这次响应不完整。
     /// 后者不能当成真值处理，否则裁剪会把该项目已有的版本和文件全删掉。
     /// 用项目自己声明的 `versions` 长度来区分
-    async fn sync_project_versions(&self, project_id: &str, declared: usize) -> Result<usize> {
+    async fn sync_project_versions(&self, project_id: &str, declared: usize) -> Result<(usize, usize)> {
         let versions = self.api.get_project_versions(project_id).await?;
         if is_incomplete_versions(versions.len(), declared) {
             return Err(Error::Config(format!(
@@ -178,7 +180,7 @@ impl ModrinthSync {
             removed_files,
             "项目版本同步完成"
         );
-        Ok(versions.len())
+        Ok((versions.len(), files.len()))
     }
 
     async fn sync_translation(&self, project_id: &str, description: Option<&str>) -> Result<()> {

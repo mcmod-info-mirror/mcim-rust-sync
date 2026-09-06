@@ -8,6 +8,7 @@ pub mod error;
 pub mod http;
 pub mod constants;
 pub mod models;
+pub mod metrics;
 pub mod runner;
 pub mod sync;
 pub mod task;

@@ -27,6 +27,10 @@ pub struct TaskSummary {
     pub skipped: usize,
     pub failed: usize,
     pub requeued: usize,
+    pub versions: usize,
+    pub files: usize,
+    pub discovered: usize,
+    pub removed: usize,
 }
 
 impl TaskSummary {
@@ -39,6 +43,10 @@ impl TaskSummary {
             skipped = self.skipped,
             failed = self.failed,
             requeued = self.requeued,
+            versions = self.versions,
+            files = self.files,
+            discovered = self.discovered,
+            removed = self.removed,
             "任务结束"
         );
     }

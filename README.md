@@ -103,6 +103,87 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 0 4 * * *     mcim-rust-sync modrinth refresh-full
 ```
 
+## Prometheus 指标
+
+`daemon` 模式会在 `0.0.0.0:9900/metrics` 暴露 Prometheus 指标。一次性执行任务不会启动该端点；Prometheus 应直接抓取 daemon 的 `9900` 端口。
+
+### 任务状态
+
+以下指标的 `task` label 是 `schedule` 中的任务名：
+
+| 指标 | 类型 | 含义 |
+| --- | --- | --- |
+| `mcim_sync_task_runs_total{task,result}` | Counter | 任务完成次数，`result` 为 `success`、`partial_failure` 或 `error` |
+| `mcim_sync_task_duration_seconds{task}` | Histogram | 任务执行耗时 |
+| `mcim_sync_task_running{task}` | Gauge | 当前是否正在运行，`1` 表示运行中 |
+| `mcim_sync_task_failures_streak{task}` | Gauge | 连续整体失败次数，部分条目失败不计入连续失败 |
+| `mcim_sync_task_overlap_skips_total{task}` | Counter | 因上一轮尚未结束而跳过的次数 |
+| `mcim_sync_task_last_run_timestamp_seconds{task}` | Gauge | 最近一次任务完成时间，Unix 时间戳 |
+| `mcim_sync_task_last_success_timestamp_seconds{task}` | Gauge | 最近一次完全成功完成时间，Unix 时间戳 |
+| `mcim_sync_task_last_result{task,result}` | Gauge | 最近一次结果，当前结果对应的 `result` 值为 `1`，其余为 `0` |
+| `mcim_sync_uptime_seconds` | Gauge | 进程运行时间 |
+
+`task_duration_seconds` 是 Histogram，可使用 `_bucket`、`_sum` 和 `_count` 后缀查询分位数或平均耗时。
+
+### 同步业务统计
+
+`mcim_sync_items_total` 是按每次任务的 `TaskSummary` 累计的 Counter，label 如下：
+
+```text
+task       schedule 中的任务名
+provider   modrinth 或 curseforge
+entity     project、mod、version 或 file
+operation  queue、refresh、refresh_full 或 search
+result     attempted、synced、not_found、skipped、failed、requeued、discovered 或 removed
+```
+
+统计范围：
+
+- `project` / `mod`：本轮尝试、成功、未找到、跳过、失败、重新入队、新发现和删除数量。
+- Modrinth 的 `version`：实际同步的版本数量。
+- `file`：实际同步的文件数量，包含 Modrinth 和 CurseForge。
+- `discovered`：`search` 任务发现且尚未入库的 project/mod 数量。
+- `removed`：refresh 任务确认上游已删除并从缓存移除的 project 数量。
+
+例如，查看每个任务成功同步的条目：
+
+```promql
+sum by (task, provider, entity) (
+  increase(mcim_sync_items_total{result="synced"}[1h])
+)
+```
+
+查看每个搜索任务发现的新 project/mod：
+
+```promql
+sum by (task, provider, entity) (
+  increase(mcim_sync_items_total{result="discovered"}[24h])
+)
+```
+
+### 内存指标
+
+内存指标在 daemon 启动时采样一次，之后每 5 秒更新：
+
+| 指标 | 含义 |
+| --- | --- |
+| `mcim_sync_process_resident_memory_bytes` | 进程当前 RSS |
+| `mcim_sync_process_virtual_memory_bytes` | 进程虚拟内存 |
+| `mcim_sync_process_peak_resident_memory_bytes` | 进程峰值 RSS |
+| `mcim_sync_cgroup_memory_current_bytes` | 当前 cgroup 内存占用 |
+| `mcim_sync_cgroup_memory_peak_bytes` | cgroup 峰值内存占用 |
+| `mcim_sync_cgroup_memory_limit_bytes` | cgroup 内存上限 |
+
+例如，当前容器内存使用率：
+
+```promql
+mcim_sync_cgroup_memory_current_bytes
+/
+mcim_sync_cgroup_memory_limit_bytes
+```
+
+这些指标不记录 project ID、mod ID、URL 或错误文本，避免产生高基数时序。单次任务的详细错误仍应通过结构化日志或后续任务历史 API 查看。
+
 ## 鸣谢
 
 谢谢来自 [HyacinthHaru](https://github.com/HyacinthHaru) 的支持！

@@ -7,6 +7,7 @@ use mcim_rust_sync::app::App;
 use mcim_rust_sync::cli::{Cli, Command};
 use mcim_rust_sync::config::Config;
 use mcim_rust_sync::error::Result;
+use mcim_rust_sync::metrics::Metrics;
 use mcim_rust_sync::runner::execute;
 use mcim_rust_sync::{daemon, task::TaskSummary};
 
@@ -75,5 +76,11 @@ async fn run(cli: &Cli) -> Result<TaskSummary> {
 async fn run_daemon(cli: &Cli) -> Result<()> {
     let config = Config::load(&cli.config)?;
     let app = App::new(config).await?;
-    daemon::run(app).await
+    let metrics = std::sync::Arc::new(Metrics::new());
+    let metrics_server = tokio::spawn(
+        std::sync::Arc::clone(&metrics).serve("0.0.0.0:9900".parse().expect("valid metrics address")),
+    );
+    let result = daemon::run(app, metrics).await;
+    metrics_server.abort();
+    result
 }

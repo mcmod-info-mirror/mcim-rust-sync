@@ -88,4 +88,8 @@ fn merge(total: &mut TaskSummary, other: TaskSummary) {
     total.skipped += other.skipped;
     total.failed += other.failed;
     total.requeued += other.requeued;
+    total.versions += other.versions;
+    total.files += other.files;
+    total.discovered += other.discovered;
+    total.removed += other.removed;
 }
