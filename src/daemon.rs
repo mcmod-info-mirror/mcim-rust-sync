@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::app::App;
@@ -48,13 +49,15 @@ pub async fn run(app: App) -> Result<()> {
     }
 
     let mut running = JoinSet::new();
+    // Serialize memory-heavy scheduled tasks so their peaks do not overlap.
+    let task_gate = Arc::new(Semaphore::new(1));
     let mut stop = Box::pin(wait_for_stop());
 
     loop {
         let delay = until_next(&jobs, Utc::now());
         tokio::select! {
             _ = tokio::time::sleep(delay) => {
-                spawn_due(&app, &mut jobs, &mut running, Utc::now());
+                spawn_due(&app, &task_gate, &mut jobs, &mut running, Utc::now());
             }
             Some(result) = running.join_next(), if !running.is_empty() => {
                 if let Err(error) = result {
@@ -113,7 +116,13 @@ fn until_next(jobs: &[Job], now: DateTime<Utc>) -> Duration {
 }
 
 /// 派发所有到期的任务
-fn spawn_due(app: &Arc<App>, jobs: &mut [Job], running: &mut JoinSet<()>, now: DateTime<Utc>) {
+fn spawn_due(
+    app: &Arc<App>,
+    task_gate: &Arc<Semaphore>,
+    jobs: &mut [Job],
+    running: &mut JoinSet<()>,
+    now: DateTime<Utc>,
+) {
     for job in jobs.iter_mut() {
         if job.next > now {
             continue;
@@ -140,9 +149,11 @@ fn spawn_due(app: &Arc<App>, jobs: &mut [Job], running: &mut JoinSet<()>, now: D
         let command = job.command.clone();
         let name = job.name.clone();
         let failures = Arc::clone(&job.failures);
+        let task_gate = Arc::clone(task_gate);
 
         running.spawn(async move {
             let _claim = claim;
+            let _task_permit = task_gate.acquire_owned().await.expect("task gate closed");
             let started = Instant::now();
             tracing::info!(task = %name, "本轮开始");
 
