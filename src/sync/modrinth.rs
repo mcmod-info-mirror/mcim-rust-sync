@@ -45,7 +45,7 @@ impl ModrinthSync {
         Self {
             api,
             db,
-            concurrency: concurrency.clamp(1, 2),
+            concurrency: concurrency.max(1),
         }
     }
 
