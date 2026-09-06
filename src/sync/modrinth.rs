@@ -4,7 +4,7 @@ use futures::stream::{self, StreamExt};
 
 use crate::api::ModrinthApi;
 use crate::db::Database;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::models::collection;
 use crate::models::modrinth::{File, Project, Version};
 use crate::models::translate::ModrinthTranslation;
@@ -66,9 +66,7 @@ impl ModrinthSync {
             Err(e) => return Err(e),
         };
 
-        // 项目自己声明的版本数，用来判断空响应是真的没版本还是响应不完整
-        let declared = project.versions.as_ref().map_or(0, Vec::len);
-        let (version_count, file_count) = match self.sync_project_versions(project_id, declared).await {
+        let (version_count, file_count) = match self.sync_project_versions(project_id).await {
             Ok(count) => count,
             // 取完项目再取版本，这中间项目可能已经被删了，这种不该重试
             Err(e) if e.is_not_found() => {
@@ -116,17 +114,9 @@ impl ModrinthSync {
 
     /// 拉全部版本，写入版本与文件，再清掉已经消失的
     ///
-    /// 版本列表为空有两种可能：项目确实一个版本都没发过，或者上游这次响应不完整。
-    /// 后者不能当成真值处理，否则裁剪会把该项目已有的版本和文件全删掉。
-    /// 用项目自己声明的 `versions` 长度来区分
-    async fn sync_project_versions(&self, project_id: &str, declared: usize) -> Result<(usize, usize)> {
+    /// 拉取到的版本列表就是该项目当前可见的完整列表，空列表也会清理旧版本与文件。
+    async fn sync_project_versions(&self, project_id: &str) -> Result<(usize, usize)> {
         let versions = self.api.get_project_versions(project_id).await?;
-        if is_incomplete_versions(versions.len(), declared) {
-            return Err(Error::Config(format!(
-                "项目 {} 声明有 {} 个版本，版本接口却返回空，响应不完整",
-                project_id, declared
-            )));
-        }
         if versions.is_empty() {
             tracing::debug!(project_id, "项目还没有发布任何版本");
         }
@@ -278,14 +268,6 @@ impl ModrinthSync {
     }
 }
 
-/// 版本接口返回空时，判断是项目本来就没有版本还是响应不完整
-///
-/// 不加区分地把空当真值会让裁剪逻辑删光该项目已有的版本与文件；
-/// 反过来一律当失败，则新建但还没发版的项目永远存不进库、还会一直重试
-fn is_incomplete_versions(returned: usize, declared: usize) -> bool {
-    returned == 0 && declared > 0
-}
-
 fn stamp_all<T>(
     mut items: Vec<T>,
     field: impl Fn(&mut T) -> &mut chrono::DateTime<Utc>,
@@ -321,29 +303,4 @@ pub async fn fetch_versions(
         all.extend(api.get_versions(chunk).await?);
     }
     Ok(all)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_incomplete_versions;
-
-    #[test]
-    fn brand_new_project_without_versions_is_fine() {
-        // 上游确实一个版本都没有，项目本身也这么声明
-        assert!(!is_incomplete_versions(0, 0));
-    }
-
-    #[test]
-    fn empty_response_for_a_project_with_versions_is_incomplete() {
-        // 声明有版本却返回空，八成是上游抽风，不能据此删数据
-        assert!(is_incomplete_versions(0, 12));
-    }
-
-    #[test]
-    fn non_empty_response_is_always_accepted() {
-        assert!(!is_incomplete_versions(12, 12));
-        // 数量对不上不算响应不完整，可能只是两次调用之间发了新版本
-        assert!(!is_incomplete_versions(11, 12));
-        assert!(!is_incomplete_versions(13, 12));
-    }
 }
