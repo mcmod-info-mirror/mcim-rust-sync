@@ -21,7 +21,7 @@ RUN touch src/main.rs src/lib.rs \
 FROM debian:trixie-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/mcim-rust-sync /usr/local/bin/mcim-rust-sync
