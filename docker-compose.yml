@@ -1,10 +1,7 @@
 services:
   mcim_rust_sync:
     container_name: mcim_rust_sync
-    image: mcim_rust_sync
-    build:
-      context: .
-      dockerfile: ./Dockerfile
+    image: z0z0r4/mcim-rust-sync
     restart: always
     network_mode: host
 
@@ -34,7 +31,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?}
       REDIS_DATABASE: 0
 
-      MAX_WORKERS: 8
+      MAX_WORKERS: 4
       CURSEFORGE_CHUNK_SIZE: 1000
       MODRINTH_CHUNK_SIZE: 100
 
@@ -44,8 +41,8 @@ services:
 
       DOMAIN_RATE_LIMITS: >-
         {
-          "api.curseforge.com": { "capacity": 100, "refill_rate": 3 },
-          "api.modrinth.com":   { "capacity": 100, "refill_rate": 3 }
+          "api.curseforge.com": { "capacity": 60, "refill_rate": 1 },
+          "api.modrinth.com":   { "capacity": 100, "refill_rate": 2 }
         }
 
       SCHEDULE: >-
