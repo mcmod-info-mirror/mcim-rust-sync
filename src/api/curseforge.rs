@@ -67,7 +67,7 @@ struct FileIdsBody<'a> {
 
 #[derive(Serialize)]
 struct FingerprintsBody<'a> {
-    fingerprints: &'a [i64],
+    fingerprints: &'a [u32],
 }
 
 /// 搜索的分片维度
@@ -152,7 +152,7 @@ impl CurseForgeApi {
         Ok(response.data)
     }
 
-    pub async fn get_fingerprints(&self, fingerprints: &[i64]) -> Result<FingerprintResult> {
+    pub async fn get_fingerprints(&self, fingerprints: &[u32]) -> Result<FingerprintResult> {
         let url = format!("{}/v1/fingerprints", self.base);
         let body = FingerprintsBody { fingerprints };
         let response: DataResponse<FingerprintResult> =

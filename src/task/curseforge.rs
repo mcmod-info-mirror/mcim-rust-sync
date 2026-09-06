@@ -80,7 +80,10 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     let (file_ids, _) = parse_ids::<i32>(&raw_file_ids);
     summary.requeued += resolve_file_ids(&cf, app, &file_ids, chunk, &mut targets).await?;
 
-    let (fingerprints, _) = parse_ids::<i64>(&raw_fingerprints);
+    let (fingerprints, invalid) = parse_ids::<u32>(&raw_fingerprints);
+    if !invalid.is_empty() {
+        tracing::warn!(count = invalid.len(), "队列里有无法解析或超出 UInt32 范围的 fingerprint，已丢弃");
+    }
     summary.requeued += resolve_fingerprints(&cf, app, &fingerprints, chunk, &mut targets).await?;
 
     let targets: Vec<i32> = targets.into_iter().filter(|id| *id >= MIN_MOD_ID).collect();
@@ -149,7 +152,7 @@ async fn resolve_file_ids(
 async fn resolve_fingerprints(
     cf: &CurseForgeSync,
     app: &App,
-    fingerprints: &[i64],
+    fingerprints: &[u32],
     chunk_size: usize,
     targets: &mut BTreeSet<i32>,
 ) -> Result<usize> {
@@ -411,11 +414,15 @@ mod tests {
     }
 
     #[test]
-    fn fingerprints_parse_as_i64() {
-        let raw = vec!["4294967296".to_string(), "1232253386".to_string()];
-        let (ids, invalid) = parse_ids::<i64>(&raw);
-        assert_eq!(ids, vec![4294967296i64, 1232253386i64]);
-        assert!(invalid.is_empty());
+    fn fingerprints_are_limited_to_uint32() {
+        let raw = vec![
+            "4294967295".to_string(),
+            "4294967296".to_string(),
+            "1232253386".to_string(),
+        ];
+        let (ids, invalid) = parse_ids::<u32>(&raw);
+        assert_eq!(ids, vec![4294967295u32, 1232253386u32]);
+        assert_eq!(invalid, vec!["4294967296".to_string()]);
     }
 
     /// 队列里出现过明显不属于 Minecraft 的极小 modid
