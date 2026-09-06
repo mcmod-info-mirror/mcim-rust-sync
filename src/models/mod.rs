@@ -1,5 +1,6 @@
 pub mod curseforge;
 pub mod modrinth;
+pub mod task_run;
 pub mod translate;
 
 use chrono::{DateTime, Utc};
@@ -8,6 +9,7 @@ use serde_with::{DeserializeAs, SerializeAs};
 
 /// MongoDB 集合名
 pub mod collection {
+    pub const TASK_RUNS: &str = "task_runs";
     pub const CURSEFORGE_MODS: &str = "curseforge_mods";
     pub const CURSEFORGE_FILES: &str = "curseforge_files";
     pub const CURSEFORGE_CATEGORIES: &str = "curseforge_categories";

@@ -60,6 +60,7 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 | `CURSEFORGE_API_KEY` | `curseforge_api_key` |
 | `PROXY` | `proxy` |
 | `SHUTDOWN_GRACE_SECS` | `shutdown_grace_secs` |
+| `TASK_API_ADDR` | 任务历史 API 监听地址，默认 `0.0.0.0:9901` |
 | `DOMAIN_RATE_LIMITS` | `domain_rate_limits`，整段 JSON |
 | `SCHEDULE` | `schedule`，整段 JSON |
 
@@ -182,7 +183,26 @@ mcim_sync_cgroup_memory_current_bytes
 mcim_sync_cgroup_memory_limit_bytes
 ```
 
-这些指标不记录 project ID、mod ID、URL 或错误文本，避免产生高基数时序。单次任务的详细错误仍应通过结构化日志或后续任务历史 API 查看。
+这些指标不记录 project ID、mod ID、URL 或错误文本，避免产生高基数时序。单次任务的详细状态和摘要应通过任务历史 API 查看。
+
+## 任务历史 API
+
+daemon 还会在 `TASK_API_ADDR`（默认 `0.0.0.0:9901`）提供任务运行历史接口。每次任务开始时先写入 `running` 记录，结束时更新为 `success`、`partial_failure` 或 `error`，并保存开始时间、结束时间、耗时和 `TaskSummary` 汇总；不会保存逐条同步日志、project/mod ID 或请求内容。进程重启时，遗留的 `running` 记录会标记为 `interrupted`。
+
+记录保存在 MongoDB 的 `task_runs` 集合中，daemon 启动时会创建查询索引。
+
+```text
+GET /healthz
+GET /api/task-runs?task=modrinth-refresh&status=success&from=1760000000000&to=1760100000000&limit=100
+```
+
+`/api/task-runs` 按 `started_at` 倒序返回记录。`task`、`status`、`from`、`to` 均可选，其中 `from`/`to` 是 Unix 毫秒时间戳，`limit` 范围为 1 到 500，响应格式为：
+
+```json
+{"data": [{"task":"modrinth-refresh","status":"success","duration_ms":1234,"total":100,"synced":20,"versions":35,"files":80}],"count":1}
+```
+
+Grafana 可使用 Infinity 等 JSON 数据源读取 `http://<sync-host>:9901/api/task-runs`，用 `task`、`status` 和 `limit` 查询参数制作任务明细表；Prometheus 继续用于趋势、告警和聚合指标。
 
 ## 鸣谢
 

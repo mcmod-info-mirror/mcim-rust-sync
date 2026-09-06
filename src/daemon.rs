@@ -12,7 +12,7 @@ use crate::cli::Command;
 use crate::config::ScheduleEntry;
 use crate::error::{Error, Result};
 use crate::metrics::Metrics;
-use crate::runner::execute;
+use crate::runner::execute_with_history;
 
 /// 单次睡眠上限，系统时钟被调整后不至于一直睡在旧的到期时刻上
 const MAX_SLEEP: Duration = Duration::from_secs(60);
@@ -43,6 +43,11 @@ pub async fn run(app: App, metrics: Arc<Metrics>) -> Result<()> {
     // 索引幂等，启动时一次建好，免得某次任务跑到一半才触发首次构建
     for name in app.db.ensure_indexes().await? {
         tracing::info!(index = %name, "索引就绪");
+    }
+    match app.db.mark_running_task_runs_interrupted(Utc::now()).await {
+        Ok(count) if count > 0 => tracing::warn!(count, "已将上次进程遗留的任务标记为 interrupted"),
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "清理遗留任务记录失败"),
     }
     for job in &jobs {
         tracing::info!(task = %job.name, next = %job.next, "已排期");
@@ -144,7 +149,10 @@ fn spawn_due(
         let claim = match claim(&job.slot) {
             Ok(claim) => claim,
             Err(elapsed) => {
-                metrics.task_overlap_skips.get_or_create(&metrics.task(&job.name)).inc();
+                metrics
+                    .task_overlap_skips
+                    .get_or_create(&metrics.task(&job.name))
+                    .inc();
                 tracing::warn!(task = %job.name, ?elapsed, "上一轮还没跑完，跳过本轮");
                 continue;
             }
@@ -163,18 +171,34 @@ fn spawn_due(
             metrics.task_running.get_or_create(&labels).set(1);
             tracing::info!(task = %name, "本轮开始");
 
-            match execute(&app, &command).await {
+            match execute_with_history(&app, &name, &command).await {
                 Ok(summary) => {
                     metrics.record_summary(&name, &command, &summary);
                     failures.store(0, Ordering::Relaxed);
                     metrics.task_failures_streak.get_or_create(&labels).set(0);
-                    metrics.task_duration.get_or_create(&labels).observe(started.elapsed().as_secs_f64());
-                    let result = if summary.is_clean() { "success" } else { "partial_failure" };
-                    metrics.task_runs.get_or_create(&metrics.task_result(&name, result)).inc();
-                    metrics.task_last_run_timestamp.get_or_create(&labels).set(Metrics::now_seconds());
+                    metrics
+                        .task_duration
+                        .get_or_create(&labels)
+                        .observe(started.elapsed().as_secs_f64());
+                    let result = if summary.is_clean() {
+                        "success"
+                    } else {
+                        "partial_failure"
+                    };
+                    metrics
+                        .task_runs
+                        .get_or_create(&metrics.task_result(&name, result))
+                        .inc();
+                    metrics
+                        .task_last_run_timestamp
+                        .get_or_create(&labels)
+                        .set(Metrics::now_seconds());
                     metrics.record_last_result(&name, result);
                     if summary.is_clean() {
-                        metrics.task_last_success_timestamp.get_or_create(&labels).set(Metrics::now_seconds());
+                        metrics
+                            .task_last_success_timestamp
+                            .get_or_create(&labels)
+                            .set(Metrics::now_seconds());
                     }
                     if summary.is_clean() {
                         tracing::info!(task = %name, elapsed = ?started.elapsed(), "本轮结束");
@@ -189,10 +213,22 @@ fn spawn_due(
                 }
                 Err(error) => {
                     let streak = failures.fetch_add(1, Ordering::Relaxed) + 1;
-                    metrics.task_failures_streak.get_or_create(&labels).set(streak as i64);
-                    metrics.task_duration.get_or_create(&labels).observe(started.elapsed().as_secs_f64());
-                    metrics.task_runs.get_or_create(&metrics.task_result(&name, "error")).inc();
-                    metrics.task_last_run_timestamp.get_or_create(&labels).set(Metrics::now_seconds());
+                    metrics
+                        .task_failures_streak
+                        .get_or_create(&labels)
+                        .set(streak as i64);
+                    metrics
+                        .task_duration
+                        .get_or_create(&labels)
+                        .observe(started.elapsed().as_secs_f64());
+                    metrics
+                        .task_runs
+                        .get_or_create(&metrics.task_result(&name, "error"))
+                        .inc();
+                    metrics
+                        .task_last_run_timestamp
+                        .get_or_create(&labels)
+                        .set(Metrics::now_seconds());
                     metrics.record_last_result(&name, "error");
                     tracing::error!(
                         task = %name,

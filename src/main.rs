@@ -8,7 +8,7 @@ use mcim_rust_sync::cli::{Cli, Command};
 use mcim_rust_sync::config::Config;
 use mcim_rust_sync::error::Result;
 use mcim_rust_sync::metrics::Metrics;
-use mcim_rust_sync::runner::execute;
+use mcim_rust_sync::runner::{command_name, execute_with_history};
 use mcim_rust_sync::{daemon, task::TaskSummary};
 
 /// 跑完了，但有个别条目没同步成功
@@ -70,7 +70,7 @@ fn init_tracing(verbose: bool) {
 async fn run(cli: &Cli) -> Result<TaskSummary> {
     let config = Config::load(&cli.config)?;
     let app = App::new(config).await?;
-    execute(&app, &cli.command).await
+    execute_with_history(&app, command_name(&cli.command), &cli.command).await
 }
 
 async fn run_daemon(cli: &Cli) -> Result<()> {
@@ -78,9 +78,18 @@ async fn run_daemon(cli: &Cli) -> Result<()> {
     let app = App::new(config).await?;
     let metrics = std::sync::Arc::new(Metrics::new());
     let metrics_server = tokio::spawn(
-        std::sync::Arc::clone(&metrics).serve("0.0.0.0:9900".parse().expect("valid metrics address")),
+        std::sync::Arc::clone(&metrics)
+            .serve("0.0.0.0:9900".parse().expect("valid metrics address")),
     );
+    let task_api_addr = app.config.task_api_addr.parse().map_err(|error| {
+        mcim_rust_sync::error::Error::Config(format!("TASK_API_ADDR 无效: {}", error))
+    })?;
+    let task_api_server = tokio::spawn(mcim_rust_sync::task_api::serve(
+        app.db.clone(),
+        task_api_addr,
+    ));
     let result = daemon::run(app, metrics).await;
     metrics_server.abort();
+    task_api_server.abort();
     result
 }

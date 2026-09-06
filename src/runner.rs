@@ -1,6 +1,9 @@
 use crate::app::App;
 use crate::cli::{Command, CurseforgeTask, ModrinthTask, game_ids};
 use crate::error::{Error, Result};
+use crate::models::task_run::{
+    ERROR as RUN_ERROR, PARTIAL_FAILURE, SUCCESS, TaskRun, TaskRunStats,
+};
 use crate::task::{self, TaskSummary};
 
 /// 执行一个任务，一次性模式与守护模式共用
@@ -79,6 +82,82 @@ pub async fn execute(app: &App, command: &Command) -> Result<TaskSummary> {
     };
 
     Ok(summary)
+}
+
+/// 执行任务并持久化一条摘要记录；MongoDB 写入失败只告警，不影响同步结果。
+pub async fn execute_with_history(
+    app: &App,
+    task_name: &str,
+    command: &Command,
+) -> Result<TaskSummary> {
+    let started_at = chrono::Utc::now();
+    let mut run = TaskRun::new(task_name, command, started_at);
+    if let Some(run) = run.as_ref() {
+        if let Err(error) = app.db.insert_task_run(run).await {
+            tracing::warn!(task = %task_name, %error, "写入任务开始记录失败");
+        }
+    }
+
+    let result = execute(app, command).await;
+    let finished_at = chrono::Utc::now();
+    if let Some(run) = run.as_mut() {
+        match &result {
+            Ok(summary) => run.finish(
+                if summary.is_clean() {
+                    SUCCESS
+                } else {
+                    PARTIAL_FAILURE
+                },
+                finished_at,
+                stats(summary),
+                None,
+            ),
+            Err(error) => run.finish(
+                RUN_ERROR,
+                finished_at,
+                TaskRunStats::default(),
+                Some(&error.to_string()),
+            ),
+        }
+        if let Err(error) = app.db.update_task_run(run).await {
+            tracing::warn!(task = %task_name, %error, "更新任务结束记录失败");
+        }
+    }
+
+    result
+}
+
+pub fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Curseforge(crate::cli::CurseforgeTask::Queue) => "curseforge-queue",
+        Command::Curseforge(crate::cli::CurseforgeTask::Refresh) => "curseforge-refresh",
+        Command::Curseforge(crate::cli::CurseforgeTask::Search { .. }) => "curseforge-search",
+        Command::Curseforge(crate::cli::CurseforgeTask::Categories { .. }) => {
+            "curseforge-categories"
+        }
+        Command::Modrinth(crate::cli::ModrinthTask::Queue) => "modrinth-queue",
+        Command::Modrinth(crate::cli::ModrinthTask::Refresh) => "modrinth-refresh",
+        Command::Modrinth(crate::cli::ModrinthTask::RefreshFull) => "modrinth-refresh-full",
+        Command::Modrinth(crate::cli::ModrinthTask::Search { .. }) => "modrinth-search",
+        Command::Modrinth(crate::cli::ModrinthTask::Tags) => "modrinth-tags",
+        Command::Indexes => "indexes",
+        Command::Daemon => "daemon",
+    }
+}
+
+fn stats(summary: &TaskSummary) -> TaskRunStats {
+    TaskRunStats {
+        total: summary.total as i64,
+        synced: summary.synced as i64,
+        not_found: summary.not_found as i64,
+        skipped: summary.skipped as i64,
+        failed: summary.failed as i64,
+        requeued: summary.requeued as i64,
+        versions: summary.versions as i64,
+        files: summary.files as i64,
+        discovered: summary.discovered as i64,
+        removed: summary.removed as i64,
+    }
 }
 
 fn merge(total: &mut TaskSummary, other: TaskSummary) {
