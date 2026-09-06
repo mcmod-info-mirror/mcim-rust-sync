@@ -106,7 +106,7 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 ## Prometheus 指标
 
-`daemon` 模式会在 `0.0.0.0:9900/metrics` 暴露 Prometheus 指标。一次性执行任务不会启动该端点；Prometheus 应直接抓取 daemon 的 `9900` 端口。
+`daemon` 模式会在 `0.0.0.0:9900/metrics` 暴露 Prometheus 指标，一次性执行任务不会启动该端点。
 
 宿主机安装 Prometheus 时，可将下面配置加入 Prometheus 配置文件，启动或重载后确认 target 状态为 `UP`：
 
