@@ -13,6 +13,7 @@ use crate::config::ScheduleEntry;
 use crate::error::{Error, Result};
 use crate::metrics::Metrics;
 use crate::runner::execute_with_history;
+use crate::task_api::ScheduleState;
 
 /// 单次睡眠上限，系统时钟被调整后不至于一直睡在旧的到期时刻上
 const MAX_SLEEP: Duration = Duration::from_secs(60);
@@ -33,12 +34,13 @@ struct Job {
 }
 
 /// 常驻，按 schedule 定时执行任务
-pub async fn run(app: App, metrics: Arc<Metrics>) -> Result<()> {
+pub async fn run(app: App, metrics: Arc<Metrics>, schedule: ScheduleState) -> Result<()> {
     let app = Arc::new(app);
     let mut jobs = build(&app.config.schedule, Utc::now())?;
     if jobs.is_empty() {
         return Err(Error::Config("schedule 是空的，没有任务可排".to_string()));
     }
+    schedule.replace(jobs.iter().map(|job| (job.name.clone(), job.next)));
 
     // 索引幂等，启动时一次建好，免得某次任务跑到一半才触发首次构建
     for name in app.db.ensure_indexes().await? {
@@ -66,7 +68,7 @@ pub async fn run(app: App, metrics: Arc<Metrics>) -> Result<()> {
                 metrics.refresh_memory();
             }
             _ = tokio::time::sleep(delay) => {
-                spawn_due(&app, &metrics, &mut jobs, &mut running, Utc::now());
+                spawn_due(&app, &metrics, &schedule, &mut jobs, &mut running, Utc::now());
             }
             Some(result) = running.join_next(), if !running.is_empty() => {
                 if let Err(error) = result {
@@ -128,6 +130,7 @@ fn until_next(jobs: &[Job], now: DateTime<Utc>) -> Duration {
 fn spawn_due(
     app: &Arc<App>,
     metrics: &Arc<Metrics>,
+    schedule: &ScheduleState,
     jobs: &mut [Job],
     running: &mut JoinSet<()>,
     now: DateTime<Utc>,
@@ -145,6 +148,7 @@ fn spawn_due(
                 job.next = DateTime::<Utc>::MAX_UTC;
             }
         }
+        schedule.set_next(&job.name, job.next);
 
         let claim = match claim(&job.slot) {
             Ok(claim) => claim,

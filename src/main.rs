@@ -9,7 +9,7 @@ use mcim_rust_sync::config::Config;
 use mcim_rust_sync::error::Result;
 use mcim_rust_sync::metrics::Metrics;
 use mcim_rust_sync::runner::{command_name, execute_with_history};
-use mcim_rust_sync::{daemon, task::TaskSummary};
+use mcim_rust_sync::{daemon, task::TaskSummary, task_api::ScheduleState};
 
 /// 跑完了，但有个别条目没同步成功
 const EXIT_COMPLETED_WITH_FAILURES: u8 = 1;
@@ -84,11 +84,13 @@ async fn run_daemon(cli: &Cli) -> Result<()> {
     let task_api_addr = app.config.task_api_addr.parse().map_err(|error| {
         mcim_rust_sync::error::Error::Config(format!("TASK_API_ADDR 无效: {}", error))
     })?;
+    let schedule = ScheduleState::default();
     let task_api_server = tokio::spawn(mcim_rust_sync::task_api::serve(
         app.db.clone(),
         task_api_addr,
+        schedule.clone(),
     ));
-    let result = daemon::run(app, metrics).await;
+    let result = daemon::run(app, metrics, schedule).await;
     metrics_server.abort();
     task_api_server.abort();
     result
