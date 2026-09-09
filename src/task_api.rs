@@ -15,11 +15,64 @@ use tokio::net::TcpListener;
 
 use crate::db::Database;
 use crate::error::Error;
+use crate::models::task_run::TaskRun;
 
 #[derive(Serialize)]
 struct TaskRunsResponse<T> {
     data: T,
     count: usize,
+}
+
+#[derive(Serialize)]
+struct TaskRunResponse {
+    #[serde(rename = "_id")]
+    id: String,
+    task: String,
+    provider: String,
+    operation: String,
+    status: String,
+    started_at: DateTime<Utc>,
+    finished_at: Option<DateTime<Utc>>,
+    duration_ms: Option<i64>,
+    total: i64,
+    synced: i64,
+    not_found: i64,
+    skipped: i64,
+    failed: i64,
+    requeued: i64,
+    versions: i64,
+    files: i64,
+    discovered: i64,
+    removed: i64,
+    error: Option<String>,
+    version: String,
+}
+
+impl From<TaskRun> for TaskRunResponse {
+    fn from(run: TaskRun) -> Self {
+        Self {
+            id: run.id.to_hex(),
+            task: run.task,
+            provider: run.provider,
+            operation: run.operation,
+            status: run.status,
+            started_at: run.started_at.to_chrono(),
+            finished_at: run.finished_at.map(|value| value.to_chrono()),
+            duration_ms: run.duration_ms,
+            total: run.total,
+            synced: run.synced,
+            not_found: run.not_found,
+            skipped: run.skipped,
+            failed: run.failed,
+            requeued: run.requeued,
+            versions: run.versions,
+            files: run.files,
+            discovered: run.discovered,
+            removed: run.removed,
+            error: run.error,
+            version: run.version,
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -95,12 +148,28 @@ async fn response(
             StatusCode::OK,
             serde_json::json!({"data": schedule.snapshot()}),
         ),
+        "/api/freshness" => freshness(&db).await,
         _ => json(
             StatusCode::NOT_FOUND,
             serde_json::json!({"error": "not found"}),
         ),
     };
     Ok(result)
+}
+
+async fn freshness(db: &Database) -> Response<Full<Bytes>> {
+    let now = Utc::now();
+    match db.freshness_summary(now).await {
+        Ok(summary) => {
+            let value = serde_json::to_value(summary)
+                .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+            json(StatusCode::OK, value)
+        }
+        Err(error) => json(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"error": public_error(&error)}),
+        ),
+    }
 }
 
 async fn task_runs(db: &Database, query: Option<&str>) -> Response<Full<Bytes>> {
@@ -122,7 +191,10 @@ async fn task_runs(db: &Database, query: Option<&str>) -> Response<Full<Bytes>> 
             StatusCode::OK,
             serde_json::to_value(TaskRunsResponse {
                 count: data.len(),
-                data,
+                data: data
+                    .into_iter()
+                    .map(TaskRunResponse::from)
+                    .collect::<Vec<_>>(),
             })
             .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"})),
         ),
@@ -158,5 +230,31 @@ fn public_error(error: &Error) -> String {
     match error {
         Error::Mongo(_) | Error::Bson(_) => "database error".to_string(),
         _ => "request failed".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::{Command, ModrinthTask};
+
+    #[test]
+    fn task_run_response_serializes_dates_as_rfc3339_strings() {
+        let started_at = Utc
+            .with_ymd_and_hms(2026, 9, 9, 1, 30, 0)
+            .single()
+            .expect("valid timestamp");
+        let run = TaskRun::new(
+            "modrinth-queue",
+            &Command::Modrinth(ModrinthTask::Queue),
+            started_at,
+        )
+        .expect("task run");
+
+        let value = serde_json::to_value(TaskRunResponse::from(run)).expect("JSON response");
+
+        assert!(value["_id"].is_string());
+        assert_eq!(value["started_at"], "2026-09-09T01:30:00Z");
+        assert!(value["finished_at"].is_null());
     }
 }

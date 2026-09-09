@@ -209,6 +209,7 @@ daemon 还会在 `TASK_API_ADDR`（默认 `0.0.0.0:9901`）提供任务运行历
 ```text
 GET /healthz
 GET /api/task-runs?task=modrinth-refresh&status=success&from=1760000000000&to=1760100000000&limit=100
+GET /api/freshness
 ```
 
 `/api/task-runs` 按 `started_at` 倒序返回记录。`task`、`status`、`from`、`to` 均可选，其中 `from`/`to` 是 Unix 毫秒时间戳，`limit` 范围为 1 到 500，响应格式为：
@@ -216,6 +217,8 @@ GET /api/task-runs?task=modrinth-refresh&status=success&from=1760000000000&to=17
 ```json
 {"data": [{"task":"modrinth-refresh","status":"success","duration_ms":1234,"total":100,"synced":20,"versions":35,"files":80}],"count":1}
 ```
+
+`/api/freshness` 汇总 `curseforge_mods` 与 `modrinth_projects` 两个集合的核对新鲜度：总数、最近 2 小时 / 24 小时 / 7 天内核对过的数量、从未核对的条数、最旧的 `checked_at` 与最新的 `sync_at`。
 
 Grafana 可使用 Infinity 等 JSON 数据源读取 `http://<sync-host>:9901/api/task-runs`，用 `task`、`status` 和 `limit` 查询参数制作任务明细表；Prometheus 继续用于趋势、告警和聚合指标。
 

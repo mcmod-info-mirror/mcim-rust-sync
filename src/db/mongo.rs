@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+
 use bson::{Document, doc};
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use mongodb::options::ClientOptions;
 use mongodb::{Client, Collection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 
 use crate::config::Config;
@@ -15,6 +17,33 @@ use crate::models::task_run::TaskRun;
 #[derive(Clone)]
 pub struct Database {
     inner: mongodb::Database,
+}
+
+/// `GET /api/freshness` 的响应体
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FreshnessResponse {
+    pub generated_at: DateTime<Utc>,
+    pub collections: BTreeMap<String, FreshnessCollection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FreshnessCollection {
+    pub total: u64,
+    pub checked_within: CheckedWithin,
+    pub never_checked: u64,
+    pub oldest_checked_at: Option<DateTime<Utc>>,
+    pub newest_sync_at: Option<DateTime<Utc>>,
+}
+
+/// 键是 `2h` / `24h` / `7d`，不是合法 Rust 标识符，所以用手写 rename
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckedWithin {
+    #[serde(rename = "2h")]
+    pub h2: u64,
+    #[serde(rename = "24h")]
+    pub h24: u64,
+    #[serde(rename = "7d")]
+    pub d7: u64,
 }
 
 impl Database {
@@ -298,6 +327,12 @@ impl Database {
                 doc! { "checked_at": 1 },
                 "checked_at_1",
             ),
+            ("curseforge_mods", doc! { "sync_at": 1 }, "sync_at_1"),
+            (
+                "modrinth_projects",
+                doc! { "sync_at": 1 },
+                "sync_at_1",
+            ),
             ("modrinth_files", doc! { "_id.sha1": 1 }, "_id.sha1_1"),
             ("modrinth_files", doc! { "_id.sha512": 1 }, "_id.sha512_1"),
             ("modrinth_files", doc! { "version_id": 1 }, "version_id_1"),
@@ -342,5 +377,149 @@ impl Database {
             .collection::<Document>(name)
             .count_documents(doc! {})
             .await?)
+    }
+
+    /// 两个主集合的新鲜度汇总
+    ///
+    /// 一次调用同时算 `curseforge_mods` 与 `modrinth_projects`，两个集合并行
+    pub async fn freshness_summary(&self, now: DateTime<Utc>) -> Result<FreshnessResponse> {
+        let curseforge = self.freshness(collection::CURSEFORGE_MODS, now);
+        let modrinth = self.freshness(collection::MODRINTH_PROJECTS, now);
+        let (curseforge, modrinth) = tokio::join!(curseforge, modrinth);
+
+        let mut collections = BTreeMap::new();
+        collections.insert(collection::CURSEFORGE_MODS.to_string(), curseforge?);
+        collections.insert(collection::MODRINTH_PROJECTS.to_string(), modrinth?);
+
+        Ok(FreshnessResponse {
+            generated_at: now,
+            collections,
+        })
+    }
+
+    /// 单个集合的「核对新鲜度」统计
+    ///
+    /// 时间阈值计数走 `checked_at_1` 索引；`total` 用元数据计数（O(1)、近似）；
+    /// `never_checked` 与 `oldest_checked_at` 用 `$gte: epoch` 的范围走索引，
+    /// 避免 `$exists` 触发的全表扫；`newest_sync_at` 走 `sync_at_1` 索引降序取第一条
+    async fn freshness(&self, name: &str, now: DateTime<Utc>) -> Result<FreshnessCollection> {
+        let collection = self.collection::<Document>(name);
+        let window_2h = now - chrono::Duration::hours(2);
+        let window_24h = now - chrono::Duration::hours(24);
+        let window_7d = now - chrono::Duration::days(7);
+        // epoch 起算点：`checked_at_1` 是非稀疏索引，缺失字段在库里记成 `null`；
+        // 用 `$gte: epoch` 走索引范围、天然排除 `null`/缺失，比 `$exists` 全表扫快得多
+        let epoch = DateTime::<Utc>::UNIX_EPOCH;
+
+        let total_collection = collection.clone();
+        let checked_collection = collection.clone();
+        let checked_24h_collection = collection.clone();
+        let checked_7d_collection = collection.clone();
+        let checked_epoch_collection = collection.clone();
+        let (total, checked_2h, checked_24h, checked_7d, checked_total) = tokio::join!(
+            // 元数据计数，O(1)；代价是近似值，可能轻微滞后于最近的写入
+            total_collection.estimated_document_count(),
+            checked_collection.count_documents(
+                doc! { "checked_at": { "$gte": bson::DateTime::from_chrono(window_2h) } }
+            ),
+            checked_24h_collection.count_documents(
+                doc! { "checked_at": { "$gte": bson::DateTime::from_chrono(window_24h) } }
+            ),
+            checked_7d_collection.count_documents(
+                doc! { "checked_at": { "$gte": bson::DateTime::from_chrono(window_7d) } }
+            ),
+            // 已核对过的数量：epoch 到现在的范围计数
+            checked_epoch_collection.count_documents(
+                doc! { "checked_at": { "$gte": bson::DateTime::from_chrono(epoch) } }
+            ),
+        );
+        let total = total?;
+        let checked_2h = checked_2h?;
+        let checked_24h = checked_24h?;
+        let checked_7d = checked_7d?;
+        let checked_total = checked_total?;
+        // never_checked = 总数 − 已核对数，避免 `$exists:false` 的全表扫
+        let never_checked = total.saturating_sub(checked_total);
+
+        let oldest_checked_at = collection
+            .clone()
+            // epoch 起算的升序第一条 = 最早的已核对时间；`$gte: epoch` 走索引，
+            // 且不会命中缺失字段（它们等于 `null`、排在 epoch 之前）
+            .find_one(doc! { "checked_at": { "$gte": bson::DateTime::from_chrono(epoch) } })
+            .sort(doc! { "checked_at": 1 })
+            .projection(doc! { "checked_at": 1 })
+            .await?
+            .and_then(|document| {
+                document
+                    .get_datetime("checked_at")
+                    .map(|value| value.to_chrono())
+                    .ok()
+            });
+
+        // `sync_at` 索引加上后，降序取第一条即最大值，不必全表 `$max`
+        let newest_sync_at = collection
+            .clone()
+            .find_one(doc! {})
+            .sort(doc! { "sync_at": -1 })
+            .projection(doc! { "sync_at": 1 })
+            .await?
+            .and_then(|document| {
+                document
+                    .get_datetime("sync_at")
+                    .map(|value| value.to_chrono())
+                    .ok()
+            });
+
+        Ok(FreshnessCollection {
+            total,
+            checked_within: CheckedWithin {
+                h2: checked_2h,
+                h24: checked_24h,
+                d7: checked_7d,
+            },
+            never_checked,
+            oldest_checked_at,
+            newest_sync_at,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freshness_serializes_with_contract_keys() {
+        let now = Utc::now();
+        let mut collections = BTreeMap::new();
+        collections.insert(
+            collection::CURSEFORGE_MODS.to_string(),
+            FreshnessCollection {
+                total: 3,
+                checked_within: CheckedWithin {
+                    h2: 1,
+                    h24: 2,
+                    d7: 3,
+                },
+                never_checked: 1,
+                oldest_checked_at: Some(now),
+                newest_sync_at: Some(now),
+            },
+        );
+
+        let value = serde_json::to_value(FreshnessResponse {
+            generated_at: now,
+            collections,
+        })
+        .expect("freshness 响应可序列化");
+
+        let item = &value["collections"]["curseforge_mods"];
+        assert_eq!(item["total"], 3);
+        assert_eq!(item["never_checked"], 1);
+        assert_eq!(item["checked_within"]["2h"], 1);
+        assert_eq!(item["checked_within"]["24h"], 2);
+        assert_eq!(item["checked_within"]["7d"], 3);
+        assert!(item["oldest_checked_at"].is_string());
+        assert!(item["newest_sync_at"].is_string());
     }
 }
