@@ -43,13 +43,20 @@ struct ModStamp {
     date_modified: Option<DateTime<Utc>>,
 }
 
-fn parse_ids<T: std::str::FromStr>(raw: &[String]) -> (Vec<T>, Vec<String>) {
+/// 解析队列成员，并把非正数与解析失败的一起归为无效
+///
+/// CurseForge 要求 modId、fileId、fingerprint 都必须大于 0。队列里只要混进
+/// 一个 0，整批请求都会 400，进而把同批有效 id 也拖进无限重试。
+fn parse_ids<T>(raw: &[String]) -> (Vec<T>, Vec<String>)
+where
+    T: std::str::FromStr + PartialOrd + From<u8>,
+{
     let mut parsed = Vec::new();
     let mut invalid = Vec::new();
     for value in raw {
         match value.parse::<T>() {
-            Ok(id) => parsed.push(id),
-            Err(_) => invalid.push(value.clone()),
+            Ok(id) if id > T::from(0) => parsed.push(id),
+            _ => invalid.push(value.clone()),
         }
     }
     (parsed, invalid)
@@ -73,18 +80,30 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
 
     let (mod_ids, invalid) = parse_ids::<i32>(&raw_mod_ids);
     if !invalid.is_empty() {
-        tracing::warn!(count = invalid.len(), "队列里有无法解析的 modid，已丢弃");
+        tracing::debug!(
+            count = invalid.len(),
+            "队列里有无法解析或非正数的 modid，已丢弃"
+        );
     }
     let mut targets: BTreeSet<i32> = mod_ids.into_iter().collect();
 
-    let (file_ids, _) = parse_ids::<i32>(&raw_file_ids);
+    let (file_ids, invalid) = parse_ids::<i32>(&raw_file_ids);
+    if !invalid.is_empty() {
+        tracing::debug!(
+            count = invalid.len(),
+            "队列里有无法解析或非正数的 fileid，已丢弃"
+        );
+    }
     let resolved = resolve_file_ids(&cf, app, &file_ids, chunk, &mut targets).await?;
     summary.requeued += resolved.requeued;
     let mut unprocessed = resolved.failed;
 
     let (fingerprints, invalid) = parse_ids::<u32>(&raw_fingerprints);
     if !invalid.is_empty() {
-        tracing::warn!(count = invalid.len(), "队列里有无法解析或超出 UInt32 范围的 fingerprint，已丢弃");
+        tracing::debug!(
+            count = invalid.len(),
+            "队列里有无法解析、非正数或超出 UInt32 范围的 fingerprint，已丢弃"
+        );
     }
     let resolved = resolve_fingerprints(&cf, app, &fingerprints, chunk, &mut targets).await?;
     summary.requeued += resolved.requeued;
@@ -248,7 +267,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
                     "mod 有更新: local={local:?}, remote={remote:?}",
                     local = local_stamp,
                     remote = value.date_modified
-                );                
+                );
                 outdated.push(value.id);
             }
         }
@@ -437,10 +456,20 @@ mod tests {
             "4294967295".to_string(),
             "4294967296".to_string(),
             "1232253386".to_string(),
+            "0".to_string(),
         ];
         let (ids, invalid) = parse_ids::<u32>(&raw);
         assert_eq!(ids, vec![4294967295u32, 1232253386u32]);
-        assert_eq!(invalid, vec!["4294967296".to_string()]);
+        assert_eq!(invalid, vec!["4294967296".to_string(), "0".to_string()]);
+    }
+
+    /// CurseForge 要求 id 大于 0，0 与负数都会让整批请求 400
+    #[test]
+    fn non_positive_ids_are_dropped() {
+        let raw = vec!["0".to_string(), "-1".to_string(), "5976975".to_string()];
+        let (ids, invalid) = parse_ids::<i32>(&raw);
+        assert_eq!(ids, vec![5976975]);
+        assert_eq!(invalid, vec!["0".to_string(), "-1".to_string()]);
     }
 
     /// 队列里出现过明显不属于 Minecraft 的极小 modid

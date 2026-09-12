@@ -140,21 +140,39 @@ impl CurseForgeApi {
 
     pub async fn get_mods(&self, mod_ids: &[i32]) -> Result<Vec<Mod>> {
         let url = format!("{}/v1/mods", self.base);
-        let body = ModIdsBody { mod_ids };
+        let mod_ids = positive_ids(mod_ids);
+        if mod_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = ModIdsBody { mod_ids: &mod_ids };
         let response: DataResponse<Vec<Mod>> = self.http.post(&url, &body, &self.headers).await?;
         Ok(response.data)
     }
 
     pub async fn get_files(&self, file_ids: &[i32]) -> Result<Vec<File>> {
         let url = format!("{}/v1/mods/files", self.base);
-        let body = FileIdsBody { file_ids };
+        let file_ids = positive_ids(file_ids);
+        if file_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = FileIdsBody {
+            file_ids: &file_ids,
+        };
         let response: DataResponse<Vec<File>> = self.http.post(&url, &body, &self.headers).await?;
         Ok(response.data)
     }
 
     pub async fn get_fingerprints(&self, fingerprints: &[u32]) -> Result<FingerprintResult> {
         let url = format!("{}/v1/fingerprints", self.base);
-        let body = FingerprintsBody { fingerprints };
+        let fingerprints = positive_ids(fingerprints);
+        if fingerprints.is_empty() {
+            return Ok(FingerprintResult {
+                exact_matches: Vec::new(),
+            });
+        }
+        let body = FingerprintsBody {
+            fingerprints: &fingerprints,
+        };
         let response: DataResponse<FingerprintResult> =
             self.http.post(&url, &body, &self.headers).await?;
         Ok(response.data)
@@ -206,6 +224,11 @@ impl CurseForgeApi {
     }
 }
 
+/// CurseForge 批量接口要求 id 大于 0，混进一个 0 会让整批请求 400
+fn positive_ids<T: Copy + PartialOrd + From<u8>>(ids: &[T]) -> Vec<T> {
+    ids.iter().copied().filter(|id| *id > T::from(0)).collect()
+}
+
 /// fingerprint 结果里出现过的 modId
 pub fn fingerprint_mod_ids(result: &FingerprintResult) -> Vec<i32> {
     let mut ids: Vec<i32> = result
@@ -230,6 +253,14 @@ pub fn matched_fingerprints(result: &FingerprintResult) -> HashMap<i64, i32> {
 #[cfg(test)]
 mod tests {
     use super::SearchSlice;
+
+    /// 0 与负数不能进请求体，否则 CurseForge 会整批拒绝
+    #[test]
+    fn non_positive_ids_are_filtered() {
+        assert_eq!(super::positive_ids(&[0, -1, 1, 946010]), vec![1, 946010]);
+        assert_eq!(super::positive_ids(&[0u32, 42]), vec![42u32]);
+        assert!(super::positive_ids::<i32>(&[0, -5]).is_empty());
+    }
 
     /// class 与 category 是搜索接口的两个不同参数，拿分类 id 去填 classId 会一条都查不到
     #[test]
