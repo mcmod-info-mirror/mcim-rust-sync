@@ -55,6 +55,16 @@ impl TaskSummary {
     pub fn is_clean(&self) -> bool {
         self.failed == 0
     }
+
+    /// 记入一批本轮没能处理成功的条目
+    ///
+    /// 批次级失败（一次请求整体失败）拿不到逐条结果，但如果不记进 `failed`，
+    /// 任务会被判成完全成功、指标里也看不到，只剩一条可能会被忽略的 warn。
+    /// 这里把它们同时算作「尝试过」和「失败」，与条目级口径保持一致。
+    pub fn record_unprocessed(&mut self, count: usize) {
+        self.total += count;
+        self.failed += count;
+    }
 }
 
 /// 队列取出后若处理不成功，必须放回去
@@ -71,7 +81,7 @@ pub async fn requeue(queues: &Queues, key: &str, members: &[String]) -> Result<u
 
 #[cfg(test)]
 mod tests {
-    use super::same_second;
+    use super::{TaskSummary, same_second};
     use chrono::{DateTime, Utc};
 
     fn at(value: &str) -> Option<DateTime<Utc>> {
@@ -100,5 +110,15 @@ mod tests {
         assert!(same_second(None, None));
         assert!(!same_second(at("2026-06-09T23:48:35Z"), None));
         assert!(!same_second(None, at("2026-06-09T23:48:35Z")));
+    }
+
+    /// 批次级失败必须计入 failed，否则任务会被当成完全成功
+    #[test]
+    fn unprocessed_items_count_as_attempted_and_failed() {
+        let mut summary = TaskSummary::default();
+        summary.record_unprocessed(7);
+        assert_eq!(summary.total, 7);
+        assert_eq!(summary.failed, 7);
+        assert!(!summary.is_clean());
     }
 }

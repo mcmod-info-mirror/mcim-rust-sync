@@ -71,14 +71,16 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     let project_ids = app.queues.drain(key::MODRINTH_PROJECT_IDS).await?;
     targets.extend(project_ids.iter().cloned());
 
+    let mut unprocessed = 0usize;
     let version_ids = app.queues.drain(key::MODRINTH_VERSION_IDS).await?;
     for batch in version_ids.chunks(chunk.max(1)) {
         match mr.api().get_versions(batch).await {
             Ok(versions) => targets.extend(versions.into_iter().map(|v| v.project_id)),
             Err(error) => {
-                tracing::warn!(%error, count = batch.len(), "批量取版本失败");
+                tracing::warn!(%error, count = batch.len(), "批量取版本失败，已放回队列并计入失败");
                 summary.requeued +=
                     requeue(&app.queues, key::MODRINTH_VERSION_IDS, batch).await?;
+                unprocessed += batch.len();
             }
         }
     }
@@ -93,8 +95,14 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
             match mr.api().get_version_files(batch, algorithm).await {
                 Ok(found) => targets.extend(found.into_values().map(|v| v.project_id)),
                 Err(error) => {
-                    tracing::warn!(%error, algorithm, count = batch.len(), "批量取 hash 失败");
+                    tracing::warn!(
+                        %error,
+                        algorithm,
+                        count = batch.len(),
+                        "批量取 hash 失败，已放回队列并计入失败"
+                    );
                     summary.requeued += requeue(&app.queues, &queue_key, batch).await?;
+                    unprocessed += batch.len();
                 }
             }
         }
@@ -107,6 +115,7 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     let requeued = summary.requeued;
     summary = summarize(&report);
     summary.requeued = requeued;
+    summary.record_unprocessed(unprocessed);
 
     let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.clone()).collect();
     summary.requeued += requeue(&app.queues, key::MODRINTH_PROJECT_IDS, &retry).await?;
@@ -131,7 +140,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let mut total = 0usize;
     let mut outdated = Vec::new();
     let mut dead = Vec::new();
-    let mut skipped = 0usize;
+    let mut unprocessed = 0usize;
     while let Some(batch) = batches.next().await {
         let batch = batch?;
         total += batch.len();
@@ -139,9 +148,10 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         let remote = match mr.api().get_projects(&ids).await {
             Ok(value) => value,
             Err(error) => {
-                // 整批失败时不能把它们当成已删除
-                tracing::warn!(%error, count = ids.len(), "批量取项目失败，本批跳过");
-                skipped += 1;
+                // 整批失败时不能把它们当成已删除，但也不能就这么算了：
+                // 这批条目没比对上，要计进 failed
+                tracing::warn!(%error, count = ids.len(), "批量取项目失败，本批计入失败");
+                unprocessed += ids.len();
                 continue;
             }
         };
@@ -180,25 +190,35 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         }
     }
 
-    if skipped > 0 {
-        tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
+    if unprocessed > 0 {
+        tracing::warn!(count = unprocessed, "有条目没比对上，本轮覆盖不完整");
     }
-    let removed = remove_dead(&mr, &dead).await?;
-    tracing::info!(total, count = outdated.len(), removed, "需要刷新的项目");
+    let (removed, remove_failed) = remove_dead(&mr, &dead).await?;
+    tracing::info!(
+        total,
+        count = outdated.len(),
+        removed,
+        unprocessed,
+        "需要刷新的项目"
+    );
 
     let report = mr.sync_projects(&outdated).await;
     let mut summary = summarize(&report);
     summary.removed = removed;
+    summary.record_unprocessed(unprocessed + remove_failed);
     Ok(summary)
 }
 
 /// 删除上游已消失的项目
-async fn remove_dead(mr: &ModrinthSync, dead: &[String]) -> Result<usize> {
+///
+/// 返回 (成功删除数, 删除失败数)，删除失败同样要计进本轮 failed
+async fn remove_dead(mr: &ModrinthSync, dead: &[String]) -> Result<(usize, usize)> {
     if dead.is_empty() {
-        return Ok(0);
+        return Ok((0, 0));
     }
 
     let mut removed = 0usize;
+    let mut failed = 0usize;
     for project_id in dead {
         match mr.remove_project(project_id).await {
             Ok(counts) => {
@@ -212,11 +232,14 @@ async fn remove_dead(mr: &ModrinthSync, dead: &[String]) -> Result<usize> {
                 );
                 removed += 1;
             }
-            // 一个删不掉不该拖垮整轮刷新，下一轮还会认出它
-            Err(error) => tracing::warn!(project_id, %error, "项目删除失败"),
+            // 一个删不掉不该拖垮整轮刷新，下一轮还会认出它，但本轮要计入失败
+            Err(error) => {
+                tracing::warn!(project_id, %error, "项目删除失败");
+                failed += 1;
+            }
         }
     }
-    Ok(removed)
+    Ok((removed, failed))
 }
 
 /// 一次取多少个项目 id 出来同步

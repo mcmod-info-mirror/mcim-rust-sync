@@ -161,6 +161,9 @@ result     attempted、synced、not_found、skipped、failed、requeued、discov
 - `discovered`：`search` 任务发现且尚未入库的 project/mod 数量。
 - `removed`：refresh 任务确认上游已删除并从缓存移除的 project 数量。
 
+批次级失败（一次请求整体失败，拿不到逐条结果）会按批内条目数同时计入 `attempted`
+和 `failed`，任务结果也会是 `partial_failure`，不会只留一条日志。
+
 例如，查看每个任务成功同步的条目：
 
 ```promql

@@ -78,13 +78,17 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     let mut targets: BTreeSet<i32> = mod_ids.into_iter().collect();
 
     let (file_ids, _) = parse_ids::<i32>(&raw_file_ids);
-    summary.requeued += resolve_file_ids(&cf, app, &file_ids, chunk, &mut targets).await?;
+    let resolved = resolve_file_ids(&cf, app, &file_ids, chunk, &mut targets).await?;
+    summary.requeued += resolved.requeued;
+    let mut unprocessed = resolved.failed;
 
     let (fingerprints, invalid) = parse_ids::<u32>(&raw_fingerprints);
     if !invalid.is_empty() {
         tracing::warn!(count = invalid.len(), "队列里有无法解析或超出 UInt32 范围的 fingerprint，已丢弃");
     }
-    summary.requeued += resolve_fingerprints(&cf, app, &fingerprints, chunk, &mut targets).await?;
+    let resolved = resolve_fingerprints(&cf, app, &fingerprints, chunk, &mut targets).await?;
+    summary.requeued += resolved.requeued;
+    unprocessed += resolved.failed;
 
     let targets: Vec<i32> = targets.into_iter().filter(|id| *id >= MIN_MOD_ID).collect();
     tracing::info!(count = targets.len(), "开始同步队列命中的 mod");
@@ -97,12 +101,20 @@ pub async fn sync_queue(app: &App) -> Result<TaskSummary> {
     summary.skipped = report_summary.skipped;
     summary.failed = report_summary.failed;
     summary.files = report_summary.files;
+    summary.record_unprocessed(unprocessed);
 
     // 只有真正失败的才放回，404 与不收录的直接丢弃，避免无限循环
     let retry: Vec<String> = report.failed.iter().map(|(id, _)| id.to_string()).collect();
     summary.requeued += requeue(&app.queues, key::CURSEFORGE_MODIDS, &retry).await?;
 
     Ok(summary)
+}
+
+/// 队列成员归一化过程中的记账：失败的要放回队列，也要计进本轮失败
+#[derive(Debug, Default, Clone, Copy)]
+struct Resolved {
+    requeued: usize,
+    failed: usize,
 }
 
 /// fileId 反查 modId，顺便把列表里不可见的文件强行入库
@@ -112,8 +124,8 @@ async fn resolve_file_ids(
     file_ids: &[i32],
     chunk_size: usize,
     targets: &mut BTreeSet<i32>,
-) -> Result<usize> {
-    let mut requeued = 0usize;
+) -> Result<Resolved> {
+    let mut resolved = Resolved::default();
     for batch in file_ids.chunks(chunk_size.max(1)) {
         match cf.api().get_files(batch).await {
             Ok(files) => {
@@ -134,19 +146,21 @@ async fn resolve_file_ids(
                         )
                         .await
                     {
-                        tracing::warn!(%error, count = hidden.len(), "不可见文件入库失败");
+                        tracing::warn!(%error, count = hidden.len(), "不可见文件入库失败，计入失败");
+                        resolved.failed += hidden.len();
                     }
                 }
             }
             Err(error) => {
-                // 这一批没处理成，放回队列而不是丢掉
-                tracing::warn!(%error, count = batch.len(), "批量取文件失败");
+                // 这一批没处理成，放回队列而不是丢掉，同时计进本轮失败
+                tracing::warn!(%error, count = batch.len(), "批量取文件失败，已放回队列并计入失败");
                 let back: Vec<String> = batch.iter().map(|id| id.to_string()).collect();
-                requeued += requeue(&app.queues, key::CURSEFORGE_FILEIDS, &back).await?;
+                resolved.requeued += requeue(&app.queues, key::CURSEFORGE_FILEIDS, &back).await?;
+                resolved.failed += batch.len();
             }
         }
     }
-    Ok(requeued)
+    Ok(resolved)
 }
 
 async fn resolve_fingerprints(
@@ -155,19 +169,21 @@ async fn resolve_fingerprints(
     fingerprints: &[u32],
     chunk_size: usize,
     targets: &mut BTreeSet<i32>,
-) -> Result<usize> {
-    let mut requeued = 0usize;
+) -> Result<Resolved> {
+    let mut resolved = Resolved::default();
     for batch in fingerprints.chunks(chunk_size.max(1)) {
         match cf.api().get_fingerprints(batch).await {
-            Ok(result) => targets.extend(fingerprint_mod_ids(&result)),
+            Ok(found) => targets.extend(fingerprint_mod_ids(&found)),
             Err(error) => {
-                tracing::warn!(%error, count = batch.len(), "批量取指纹失败");
+                tracing::warn!(%error, count = batch.len(), "批量取指纹失败，已放回队列并计入失败");
                 let back: Vec<String> = batch.iter().map(|id| id.to_string()).collect();
-                requeued += requeue(&app.queues, key::CURSEFORGE_FINGERPRINTS, &back).await?;
+                resolved.requeued +=
+                    requeue(&app.queues, key::CURSEFORGE_FINGERPRINTS, &back).await?;
+                resolved.failed += batch.len();
             }
         }
     }
-    Ok(requeued)
+    Ok(resolved)
 }
 
 /// 增量刷新：比对上游 dateModified，只同步有变化的
@@ -186,7 +202,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 
     let mut total = 0usize;
     let mut outdated = Vec::new();
-    let mut skipped = 0usize;
+    let mut unprocessed = 0usize;
     while let Some(batch) = batches.next().await {
         let batch = batch?;
         total += batch.len();
@@ -201,9 +217,10 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         let remote = match cf.api().get_mods(&ids).await {
             Ok(value) => value,
             Err(error) => {
-                // 一批取不到不该让整轮刷新作废，其余批次照常比对
-                tracing::warn!(%error, count = ids.len(), "批量取 mod 失败，本批跳过");
-                skipped += 1;
+                // 一批取不到不该让整轮刷新作废，其余批次照常比对，
+                // 但这批条目要计进 failed，不能只留一条容易被忽略的 warn
+                tracing::warn!(%error, count = ids.len(), "批量取 mod 失败，本批计入失败");
+                unprocessed += ids.len();
                 continue;
             }
         };
@@ -237,12 +254,13 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         }
     }
 
-    if skipped > 0 {
-        tracing::warn!(batches = skipped, "有批次没比对上，本轮覆盖不完整");
+    if unprocessed > 0 {
+        tracing::warn!(count = unprocessed, "有条目没比对上，本轮覆盖不完整");
     }
-    tracing::info!(total, count = outdated.len(), "需要刷新的 mod");
+    tracing::info!(total, count = outdated.len(), unprocessed, "需要刷新的 mod");
     let report = cf.sync_mods(&outdated).await;
-    let summary = summarize(&report);
+    let mut summary = summarize(&report);
+    summary.record_unprocessed(unprocessed);
 
     Ok(summary)
 }
