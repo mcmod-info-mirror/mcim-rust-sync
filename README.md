@@ -130,7 +130,7 @@ scrape_configs:
 | 指标 | 类型 | 含义 |
 | --- | --- | --- |
 | `mcim_sync_task_runs_total{task,result}` | Counter | 任务完成次数，`result` 为 `success`、`partial_failure` 或 `error` |
-| `mcim_sync_task_duration_seconds{task}` | Histogram | 任务执行耗时 |
+| `mcim_sync_task_duration_seconds{task}` | Gauge | 最近一次完成运行的耗时，单位秒 |
 | `mcim_sync_task_running{task}` | Gauge | 当前是否正在运行，`1` 表示运行中 |
 | `mcim_sync_task_failures_streak{task}` | Gauge | 连续整体失败次数，部分条目失败不计入连续失败 |
 | `mcim_sync_task_overlap_skips_total{task}` | Counter | 因上一轮尚未结束而跳过的次数 |
@@ -139,7 +139,18 @@ scrape_configs:
 | `mcim_sync_task_last_result{task,result}` | Gauge | 最近一次结果，当前结果对应的 `result` 值为 `1`，其余为 `0` |
 | `mcim_sync_uptime_seconds` | Gauge | 进程运行时间 |
 
-`task_duration_seconds` 是 Histogram，可使用 `_bucket`、`_sum` 和 `_count` 后缀查询分位数或平均耗时。
+`task_duration_seconds` 是 Gauge，每次任务结束时写入该轮的真实耗时并一直保持到下一轮结束，因此：
+
+```promql
+# 最近一次完成的耗时
+mcim_sync_task_duration_seconds
+
+# 所选时间窗口内最慢的一轮（精确值，不是分位数估计）
+max_over_time(mcim_sync_task_duration_seconds[$__range])
+
+# 所选时间窗口内最后一次完成的耗时
+last_over_time(mcim_sync_task_duration_seconds[$__range])
+```
 
 ### 同步业务统计
 

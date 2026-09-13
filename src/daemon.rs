@@ -183,7 +183,7 @@ fn spawn_due(
                     metrics
                         .task_duration
                         .get_or_create(&labels)
-                        .observe(started.elapsed().as_secs_f64());
+                        .set(started.elapsed().as_secs_f64());
                     let result = if summary.is_clean() {
                         "success"
                     } else {
@@ -224,7 +224,7 @@ fn spawn_due(
                     metrics
                         .task_duration
                         .get_or_create(&labels)
-                        .observe(started.elapsed().as_secs_f64());
+                        .set(started.elapsed().as_secs_f64());
                     metrics
                         .task_runs
                         .get_or_create(&metrics.task_result(&name, "error"))

@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -15,7 +16,6 @@ use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::Registry;
 use tokio::net::TcpListener;
 
@@ -46,7 +46,7 @@ pub struct ItemLabels {
 pub struct Metrics {
     registry: Arc<Mutex<Registry>>,
     pub task_runs: Family<TaskResultLabels, Counter>,
-    pub task_duration: Family<TaskLabels, Histogram, fn() -> Histogram>,
+    pub task_duration: Family<TaskLabels, Gauge<f64, AtomicU64>>,
     pub task_running: Family<TaskLabels, Gauge>,
     pub task_failures_streak: Family<TaskLabels, Gauge>,
     pub task_overlap_skips: Family<TaskLabels, Counter>,
@@ -67,7 +67,7 @@ impl Metrics {
     pub fn new() -> Self {
         let mut registry = Registry::default();
         let task_runs = Family::default();
-        let task_duration = Family::new_with_constructor(default_histogram as fn() -> Histogram);
+        let task_duration: Family<TaskLabels, Gauge<f64, AtomicU64>> = Family::default();
         let task_running = Family::default();
         let task_failures_streak = Family::default();
         let task_overlap_skips = Family::default();
@@ -83,7 +83,7 @@ impl Metrics {
         let cgroup_memory_limit_bytes = Gauge::default();
 
         registry.register("mcim_sync_task_runs", "Task runs", task_runs.clone());
-        registry.register("mcim_sync_task_duration_seconds", "Task duration", task_duration.clone());
+        registry.register("mcim_sync_task_duration_seconds", "Duration of the most recent completed task run, in seconds", task_duration.clone());
         registry.register("mcim_sync_task_running", "Running tasks", task_running.clone());
         registry.register("mcim_sync_task_failures_streak", "Consecutive task failures", task_failures_streak.clone());
         registry.register("mcim_sync_task_overlap_skips", "Overlapping task skips", task_overlap_skips.clone());
@@ -255,10 +255,6 @@ async fn metrics_response(
         .unwrap())
 }
 
-fn default_histogram() -> Histogram {
-    Histogram::new(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 900.0])
-}
-
 #[derive(Default)]
 struct ProcStatus {
     rss_kb: Option<u64>,
@@ -298,7 +294,7 @@ fn kib_to_bytes(value: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_proc_status;
+    use super::{parse_proc_status, Metrics};
 
     #[test]
     fn parses_process_memory_fields() {
@@ -307,5 +303,20 @@ mod tests {
         assert_eq!(parsed.vmsize_kb, Some(123));
         assert_eq!(parsed.rss_kb, Some(45));
         assert_eq!(parsed.hwm_kb, Some(67));
+    }
+
+    #[test]
+    fn task_duration_is_exposed_as_a_gauge() {
+        let metrics = Metrics::new();
+        metrics.task_duration.get_or_create(&metrics.task("demo")).set(123.5);
+        let output = metrics.encode();
+        assert!(
+            output.contains("mcim_sync_task_duration_seconds{task=\"demo\"} 123.5"),
+            "unexpected metric output:\n{output}"
+        );
+        assert!(
+            !output.contains("mcim_sync_task_duration_seconds_bucket"),
+            "task duration should not be a histogram any more:\n{output}"
+        );
     }
 }
