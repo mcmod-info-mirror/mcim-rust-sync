@@ -3,7 +3,9 @@
 从 Mod 平台拉取信息，写入 MCIM 的缓存库，[mcim-sync](https://github.com/mcmod-info-mirror/mcim-sync) 的 Rust 实现。
 
 > [!WARNING]
-> WIP! Claude Code 含量过高，请勿于生产环境部署
+> WIP! Claude Code 含量过高
+
+关于如何接入 MCIM，应该前往 <https://www.mcimirror.top> 而不是查看以下 README，你知道的太多了
 
 ## 关于缓存思路
 
@@ -240,4 +242,4 @@ Grafana 可使用 Infinity 等 JSON 数据源读取 `http://<sync-host>:9901/api
 
 谢谢来自 [HyacinthHaru](https://github.com/HyacinthHaru) 的支持！
 
-之前有过尝试，最终在 HyacinthHaru 的支持下才重新开始。
+之前有过尝试重构，最终在 HyacinthHaru 的支持下才重新开始。
