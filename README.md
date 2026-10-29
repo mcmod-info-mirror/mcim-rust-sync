@@ -45,7 +45,7 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 
 失败的 id 会被放回 Redis 队列等待下一轮。
 
-创建数据库后，先执行一次 `mcim-rust-sync indexes` 建立索引。
+数据写入 PostgreSQL，表结构由 [mcim-rust-api](https://github.com/mcmod-info-mirror/mcim-rust-api) 启动时建立，本程序启动时会检查表是否齐全。建表后先执行一次 `mcim-rust-sync indexes` 建立同步所需的额外索引。
 
 ## 配置
 
@@ -54,7 +54,7 @@ Exit Code：`0` 同步成功，`1` 有个别条目没同步成功，`2` 整体�
 | 环境变量 | 覆盖项 |
 | --- | --- |
 | `DEBUG` | `debug` |
-| `MONGODB_HOST` / `_PORT` / `_AUTH` / `_USER` / `_PASSWORD` / `_DATABASE` | `mongodb.*` |
+| `DATABASE_URL` | `database_url`，PostgreSQL 连接串，缺省 `postgresql://postgres@localhost:5432/mcim_backend` |
 | `REDIS_HOST` / `_PORT` / `_PASSWORD` / `_DATABASE` | `redis.*` |
 | `MAX_WORKERS` | `max_workers` |
 | `CURSEFORGE_CHUNK_SIZE` / `MODRINTH_CHUNK_SIZE` | 批量接口的分块大小 |
@@ -220,7 +220,7 @@ mcim_sync_cgroup_memory_limit_bytes
 
 daemon 还会在 `TASK_API_ADDR`（默认 `0.0.0.0:9901`）提供任务运行历史接口。每次任务开始时先写入 `running` 记录，结束时更新为 `success`、`partial_failure` 或 `error`，并保存开始时间、结束时间、耗时和 `TaskSummary` 汇总；不会保存逐条同步日志、project/mod ID 或请求内容。进程重启时，遗留的 `running` 记录会标记为 `interrupted`。
 
-记录保存在 MongoDB 的 `task_runs` 集合中，daemon 启动时会创建查询索引。
+记录保存在 PostgreSQL 的 `task_runs` 表中（启动时自动创建），daemon 启动时会创建查询索引。
 
 ```text
 GET /healthz
