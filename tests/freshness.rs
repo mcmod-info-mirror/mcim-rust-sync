@@ -1,49 +1,27 @@
 //! `/api/freshness` 的计数逻辑集成测试
 //!
-//! 直接走 `Database` 连 MongoDB，不牵涉 Redis。本机没起 MongoDB 就跳过，
+//! 直接走 `Database` 连 PostgreSQL，不牵涉 Redis。没设 `DATABASE_URL` 就跳过，
 
-use bson::{Document, doc};
+mod common;
+
 use chrono::{DateTime, TimeZone, Utc};
 use mcim_rust_sync::config::Config;
 use mcim_rust_sync::db::Database;
 use mcim_rust_sync::models::collection;
 
-fn config(database: &str) -> Config {
-    let raw = format!(
-        r#"{{
-            "mongodb": {{ "host": "localhost", "port": 27017, "database": "{}" }}
-        }}"#,
-        database
-    );
-    Config::from_json(&raw).expect("解析测试配置失败")
-}
-
-async fn database(database: &str) -> Option<Database> {
-    match Database::connect(&config(database)).await {
-        Ok(db) => Some(db),
-        Err(e) => {
-            eprintln!("跳过：连不上 MongoDB（{}）", e);
-            None
-        }
-    }
-}
-
-async fn reset(db: &Database, names: &[&str]) {
-    for name in names {
-        db.delete_many(name, doc! {}).await.expect("清库失败");
-    }
+async fn database(name: &str) -> Option<Database> {
+    let url = common::fresh_database(name).await?;
+    let mut config = Config::from_json("{}").expect("解析测试配置失败");
+    config.database_url = url;
+    Some(Database::connect(&config).await.expect("连接测试库失败"))
 }
 
 #[tokio::test]
 async fn freshness_counts_by_checked_at_windows() {
-    let db = match database("mcim_freshness_test").await {
-        Some(db) => db,
-        None => return,
+    let Some(db) = database("mcim_freshness_test").await else {
+        return;
     };
-    let names = [collection::CURSEFORGE_MODS, collection::MODRINTH_PROJECTS];
-    reset(&db, &names).await;
 
-    // 固定到毫秒对齐的时间，避免 BSON DateTime 毫秒精度回读后跟预期值差了个尾巴
     let now = Utc
         .with_ymd_and_hms(2026, 9, 9, 12, 0, 0)
         .single()
@@ -70,30 +48,27 @@ async fn freshness_counts_by_checked_at_windows() {
         ),
     ];
 
-    // curseforge_mods 的 `_id` 是 i32，modrinth_projects 是字符串
-    for name in names {
-        let docs: Vec<Document> = entries
-            .iter()
-            .enumerate()
-            .map(|(index, (checked, sync))| {
-                let mut doc = doc! {
-                    "sync_at": bson::DateTime::from_chrono(*sync),
-                };
-                if name == collection::CURSEFORGE_MODS {
-                    doc.insert("_id", (index + 1) as i32);
-                } else {
-                    doc.insert("_id", format!("proj-{}", index + 1));
-                }
-                if let Some(value) = checked {
-                    doc.insert("checked_at", bson::DateTime::from_chrono(*value));
-                }
-                doc
-            })
-            .collect();
-        db.collection::<Document>(name)
-            .insert_many(docs)
-            .await
-            .expect("插入新鲜度样本失败");
+    for (index, (checked, sync)) in entries.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO curseforge_mods (id, slug, sync_at, checked_at) VALUES ($1, $2, $3, $4)",
+        )
+        .bind((index + 1) as i32)
+        .bind(format!("mod-{}", index + 1))
+        .bind(sync)
+        .bind(checked)
+        .execute(db.pool())
+        .await
+        .expect("插入 curseforge_mods 样本失败");
+        sqlx::query(
+            "INSERT INTO modrinth_projects (id, slug, team, published, updated, followers, \
+             sync_at, checked_at) VALUES ($1, $1, 'team', $2, $2, 0, $2, $3)",
+        )
+        .bind(format!("proj-{}", index + 1))
+        .bind(sync)
+        .bind(checked)
+        .execute(db.pool())
+        .await
+        .expect("插入 modrinth_projects 样本失败");
     }
 
     let summary = db
@@ -101,7 +76,7 @@ async fn freshness_counts_by_checked_at_windows() {
         .await
         .expect("freshness_summary 失败");
 
-    for name in names {
+    for name in [collection::CURSEFORGE_MODS, collection::MODRINTH_PROJECTS] {
         let item = &summary.collections[name];
         assert_eq!(item.total, 5, "{name} total");
         assert_eq!(item.checked_within.h2, 1, "{name} 2h");

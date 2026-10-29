@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::api::{CurseForgeApi, ModrinthApi};
 use crate::config::Config;
+use crate::db::postgres::describe_target;
 use crate::db::{Database, Queues};
 use crate::error::Result;
 use crate::http::HttpClient;
@@ -21,10 +22,7 @@ impl App {
         // 配置可以完全来自环境变量，把最终连到哪儿打出来，
         // 免得配错了却一路跑到写库才发现
         tracing::info!(
-            mongodb = format!(
-                "{}:{}/{}",
-                config.mongodb.host, config.mongodb.port, config.mongodb.database
-            ),
+            postgres = describe_target(&config.database_url),
             redis = format!(
                 "{}:{}/{}",
                 config.redis.host, config.redis.port, config.redis.database

@@ -1,4 +1,3 @@
-use bson::doc;
 use futures::stream::{self, StreamExt};
 
 use crate::api::CurseForgeApi;
@@ -6,20 +5,12 @@ use crate::constants::{
     ACCEPT_GAME_IDS, CURSEFORGE_FILES_FALLBACK_PAGE_SIZE, CURSEFORGE_FILES_PAGE_SIZE,
 };
 use crate::db::Database;
+use crate::db::curseforge::RemovedMod;
 use crate::error::Result;
-use crate::models::collection;
 use crate::models::curseforge::{Category, File, Mod};
 use crate::models::translate::CurseForgeTranslation;
 
 use super::{Outcome, Report};
-
-/// 删除一个 mod 时各集合实际删掉的条数
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RemovedCounts {
-    pub mods: u64,
-    pub files: u64,
-    pub translations: u64,
-}
 
 #[derive(Debug, Clone)]
 pub struct ModSummary {
@@ -80,23 +71,14 @@ impl CurseForgeSync {
             Err(e) => return Err(e),
         };
         let file_count = files.len();
-        self.db
-            .upsert_many(collection::CURSEFORGE_FILES, &files, self.concurrency)
-            .await?;
+        self.db.replace_curseforge_files(&files).await?;
 
         let kept: Vec<i32> = files.iter().map(|file| file.id).collect();
         // isAvailable 为真却已从文件列表消失的才删。
         // 有些文件在列表里不可见但按 fileId 仍能取到，那些要留着
         let removed = self
             .db
-            .delete_many(
-                collection::CURSEFORGE_FILES,
-                doc! {
-                    "modId": mod_id,
-                    "isAvailable": true,
-                    "_id": { "$nin": kept },
-                },
-            )
+            .delete_unlisted_curseforge_files(mod_id, &kept)
             .await?;
 
         self.sync_translation(mod_id, mod_model.summary.as_deref())
@@ -105,9 +87,7 @@ impl CurseForgeSync {
         let name = mod_model.name.clone();
         // 刚从上游取回来，等同于刚核对过
         mod_model.checked_at = Some(mod_model.sync_at);
-        self.db
-            .upsert_many(collection::CURSEFORGE_MODS, &[mod_model], 1)
-            .await?;
+        self.db.replace_curseforge_mods(&[mod_model]).await?;
 
         tracing::info!(mod_id, file_count, removed, "mod 同步完成");
         Ok(Outcome::Synced(ModSummary {
@@ -178,20 +158,14 @@ impl CurseForgeSync {
         for chunk in file_ids.chunks(chunk_size.max(1)) {
             let files = self.api.get_files(chunk).await?;
             written += files.len();
-            self.db
-                .upsert_many(collection::CURSEFORGE_FILES, &files, self.concurrency)
-                .await?;
+            self.db.replace_curseforge_files(&files).await?;
         }
         Ok(written)
     }
 
     /// 只做标记，真正的翻译由 mcim-translate 完成
     async fn sync_translation(&self, mod_id: i32, summary: Option<&str>) -> Result<()> {
-        let existing = self
-            .db
-            .collection::<CurseForgeTranslation>(collection::CURSEFORGE_TRANSLATED)
-            .find_one(doc! { "_id": mod_id })
-            .await?;
+        let existing = self.db.curseforge_translation(mod_id).await?;
 
         let unchanged = existing
             .as_ref()
@@ -207,45 +181,21 @@ impl CurseForgeSync {
             need_to_update: true,
             translated_at: existing.as_ref().and_then(|r| r.translated_at),
         };
-        self.db
-            .upsert_many(collection::CURSEFORGE_TRANSLATED, &[record], 1)
-            .await?;
+        self.db.upsert_curseforge_translation(&record).await?;
         Ok(())
     }
 
     pub async fn sync_categories(&self, game_id: i32) -> Result<Vec<Category>> {
         let categories = self.api.get_categories(game_id, None, false).await?;
-        self.db
-            .upsert_many(
-                collection::CURSEFORGE_CATEGORIES,
-                &categories,
-                self.concurrency,
-            )
-            .await?;
+        self.db.upsert_curseforge_categories(&categories).await?;
         Ok(categories)
     }
 
     /// 上游已删除的 mod，连同它的文件与翻译记录一起清掉
     ///
     /// Python 版在 CurseForge 侧完全没有这条路径，404 的 mod 会永远留在库里
-    pub async fn remove_mod(&self, mod_id: i32) -> Result<RemovedCounts> {
-        let files = self
-            .db
-            .delete_many(collection::CURSEFORGE_FILES, doc! { "modId": mod_id })
-            .await?;
-        let translations = self
-            .db
-            .delete_by_id(collection::CURSEFORGE_TRANSLATED, &mod_id)
-            .await?;
-        let mods = self
-            .db
-            .delete_by_id(collection::CURSEFORGE_MODS, &mod_id)
-            .await?;
-        Ok(RemovedCounts {
-            mods,
-            files,
-            translations,
-        })
+    pub async fn remove_mod(&self, mod_id: i32) -> Result<RemovedMod> {
+        self.db.remove_curseforge_mod(mod_id).await
     }
 }
 

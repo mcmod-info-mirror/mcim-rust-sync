@@ -1,16 +1,15 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde::Deserialize;
 
-use super::{FlexDateTime, now};
+use super::now;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Hash {
     pub value: String,
     pub algo: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Author {
     pub id: i32,
     pub name: String,
@@ -18,7 +17,7 @@ pub struct Author {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Logo {
     pub id: i32,
     #[serde(rename = "modId")]
@@ -33,7 +32,7 @@ pub struct Logo {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ScreenShot {
     pub id: i32,
     #[serde(rename = "modId")]
@@ -48,7 +47,7 @@ pub struct ScreenShot {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Links {
     #[serde(rename = "websiteUrl", default)]
     pub website_url: Option<String>,
@@ -60,7 +59,7 @@ pub struct Links {
     pub source_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Module {
     #[serde(default)]
     pub name: Option<String>,
@@ -68,7 +67,7 @@ pub struct Module {
     pub fingerprint: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FileDependencies {
     #[serde(rename = "modId")]
     pub mod_id: i32,
@@ -76,8 +75,7 @@ pub struct FileDependencies {
     pub relation_type: Option<i32>,
 }
 
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FileSortableGameVersions {
     #[serde(rename = "gameVersionName", default)]
     pub game_version_name: Option<String>,
@@ -85,14 +83,13 @@ pub struct FileSortableGameVersions {
     pub game_version_padded: Option<String>,
     #[serde(rename = "gameVersion", default)]
     pub game_version: Option<String>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "gameVersionReleaseDate", default)]
     pub game_version_release_date: Option<DateTime<Utc>>,
     #[serde(rename = "gameVersionTypeId", default)]
     pub game_version_type_id: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FileIndex {
     #[serde(rename = "gameVersion", default)]
     pub game_version: Option<String>,
@@ -108,8 +105,7 @@ pub struct FileIndex {
     pub mod_loader: Option<i32>,
 }
 
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CategoryInfo {
     #[serde(default)]
     pub id: Option<i32>,
@@ -123,7 +119,6 @@ pub struct CategoryInfo {
     pub url: Option<String>,
     #[serde(rename = "iconUrl", default)]
     pub icon_url: Option<String>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "dateModified", default)]
     pub date_modified: Option<DateTime<Utc>>,
     #[serde(rename = "isClass", default)]
@@ -136,11 +131,9 @@ pub struct CategoryInfo {
     pub display_index: Option<i32>,
 }
 
-/// `curseforge_files` 集合
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `curseforge_files` 表
+#[derive(Debug, Clone, Deserialize)]
 pub struct File {
-    #[serde(rename = "_id", alias = "id")]
     pub id: i32,
     #[serde(rename = "gameId")]
     pub game_id: i32,
@@ -158,7 +151,6 @@ pub struct File {
     pub file_status: Option<i32>,
     #[serde(default)]
     pub hashes: Option<Vec<Hash>>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "fileDate", default)]
     pub file_date: Option<DateTime<Utc>>,
     #[serde(rename = "fileLength", default)]
@@ -187,7 +179,6 @@ pub struct File {
     pub server_pack_file_id: Option<i32>,
     #[serde(rename = "isEarlyAccessContent", default)]
     pub is_early_access_content: Option<bool>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "earlyAccessEndDate", default)]
     pub early_access_end_date: Option<DateTime<Utc>>,
     #[serde(rename = "fileFingerprint", default)]
@@ -195,14 +186,12 @@ pub struct File {
     #[serde(default)]
     pub modules: Option<Vec<Module>>,
 
-    #[serde_as(as = "FlexDateTime")]
     #[serde(default = "now")]
     pub sync_at: DateTime<Utc>,
 }
 
-/// `Mod.latestFiles` 内嵌的文件，与 `File` 的区别是没有 `_id` 与 `sync_at`
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `Mod.latestFiles` 内嵌的文件，与 `File` 的区别是没有 `sync_at`
+#[derive(Debug, Clone, Deserialize)]
 pub struct FileInfo {
     pub id: i32,
     #[serde(rename = "gameId")]
@@ -221,7 +210,6 @@ pub struct FileInfo {
     pub file_status: Option<i32>,
     #[serde(default)]
     pub hashes: Option<Vec<Hash>>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "fileDate", default)]
     pub file_date: Option<DateTime<Utc>>,
     #[serde(rename = "fileLength", default)]
@@ -250,7 +238,6 @@ pub struct FileInfo {
     pub server_pack_file_id: Option<i32>,
     #[serde(rename = "isEarlyAccessContent", default)]
     pub is_early_access_content: Option<bool>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "earlyAccessEndDate", default)]
     pub early_access_end_date: Option<DateTime<Utc>>,
     #[serde(rename = "fileFingerprint", default)]
@@ -259,11 +246,9 @@ pub struct FileInfo {
     pub modules: Option<Vec<Module>>,
 }
 
-/// `curseforge_mods` 集合
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `curseforge_mods` 表
+#[derive(Debug, Clone, Deserialize)]
 pub struct Mod {
-    #[serde(rename = "_id", alias = "id")]
     pub id: i32,
     #[serde(rename = "gameId", default)]
     pub game_id: Option<i32>,
@@ -298,13 +283,10 @@ pub struct Mod {
     pub latest_files: Option<Vec<FileInfo>>,
     #[serde(rename = "latestFilesIndexes", default)]
     pub latest_files_indexes: Option<Vec<FileIndex>>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "dateCreated", default)]
     pub date_created: Option<DateTime<Utc>>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "dateModified", default)]
     pub date_modified: Option<DateTime<Utc>>,
-    #[serde_as(as = "Option<FlexDateTime>")]
     #[serde(rename = "dateReleased", default)]
     pub date_released: Option<DateTime<Utc>>,
     #[serde(rename = "allowModDistribution", default)]
@@ -318,7 +300,6 @@ pub struct Mod {
     #[serde(default)]
     pub rating: Option<i32>,
 
-    #[serde_as(as = "FlexDateTime")]
     #[serde(default = "now")]
     pub sync_at: DateTime<Utc>,
 
@@ -326,19 +307,16 @@ pub struct Mod {
     ///
     /// 与 `sync_at` 的区别：内容没变也会更新。只有 `sync_at` 的话，
     /// 「从没检查过」和「刚确认过但没变」这两种情况分不开
-    #[serde_as(as = "Option<FlexDateTime>")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub checked_at: Option<DateTime<Utc>>,
 }
 
-/// `curseforge_categories` 集合
+/// `curseforge_categories` 表
 ///
-/// `displayIndex` 在 mcim-rust-api 侧是必填 i32，缺失时回落到 0，
-/// 否则写入 null 会让读侧反序列化失败
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `displayIndex` 在 mcim-rust-api 的表结构里是 NOT NULL，缺失时回落到 0，
+/// 否则写入会违反约束
+#[derive(Debug, Clone, Deserialize)]
 pub struct Category {
-    #[serde(rename = "_id", alias = "id")]
     pub id: i32,
     #[serde(rename = "gameId")]
     pub game_id: i32,
@@ -349,7 +327,6 @@ pub struct Category {
     pub url: Option<String>,
     #[serde(rename = "iconUrl", default)]
     pub icon_url: Option<String>,
-    #[serde_as(as = "FlexDateTime")]
     #[serde(rename = "dateModified")]
     pub date_modified: DateTime<Utc>,
     #[serde(rename = "isClass", default)]
@@ -361,7 +338,6 @@ pub struct Category {
     #[serde(rename = "displayIndex", default)]
     pub display_index: i32,
 
-    #[serde_as(as = "FlexDateTime")]
     #[serde(default = "now")]
     pub sync_at: DateTime<Utc>,
 }

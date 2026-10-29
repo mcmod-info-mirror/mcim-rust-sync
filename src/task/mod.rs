@@ -8,7 +8,7 @@ use crate::error::Result;
 
 /// 按秒比较时间戳
 ///
-/// 库里存的是 BSON DateTime，只有毫秒精度，而 Modrinth 上游给到微秒，
+/// 从 MongoDB 迁移来的时间戳只有毫秒精度，而 Modrinth 上游给到微秒，
 /// 直接按完整精度比较会让每个项目都被判成有更新
 pub fn same_second(left: Option<DateTime<Utc>>, right: Option<DateTime<Utc>>) -> bool {
     match (left, right) {

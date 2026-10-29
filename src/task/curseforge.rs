@@ -1,18 +1,13 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use bson::doc;
-use futures::StreamExt;
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use serde_with::serde_as;
 
 use crate::api::curseforge::{SearchSlice, fingerprint_mod_ids};
 use crate::app::App;
 use crate::constants::{CURSEFORGE_SEARCH_LIMIT, CURSEFORGE_SEARCH_PAGE_SIZE, class_ids};
 use crate::db::queue::key;
 use crate::error::Result;
-use crate::models::collection;
-use crate::models::{FlexDateTime, curseforge::File};
+use crate::models::curseforge::File;
 use crate::sync::curseforge::CurseForgeSync;
 
 use super::{TaskSummary, requeue, same_second};
@@ -32,16 +27,6 @@ fn summarize(report: &crate::sync::Report<i32, crate::sync::curseforge::ModSumma
 
 /// 队列里混进过极小的 modid，实际不属于 Minecraft
 const MIN_MOD_ID: i32 = 30000;
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-struct ModStamp {
-    #[serde(rename = "_id")]
-    id: i32,
-    #[serde_as(as = "Option<FlexDateTime>")]
-    #[serde(rename = "dateModified", default)]
-    date_modified: Option<DateTime<Utc>>,
-}
 
 /// 解析队列成员，并把非正数与解析失败的一起归为无效
 ///
@@ -156,15 +141,7 @@ async fn resolve_file_ids(
                 if !hidden.is_empty() {
                     tracing::debug!(count = hidden.len(), "文件在列表中不可见，直接入库");
                     // 队列已经被取空，这里顺带补录写不进去也不能让整轮作废
-                    if let Err(error) = cf
-                        .db()
-                        .upsert_many(
-                            collection::CURSEFORGE_FILES,
-                            &hidden,
-                            app.config.max_workers,
-                        )
-                        .await
-                    {
+                    if let Err(error) = cf.db().replace_curseforge_files(&hidden).await {
                         tracing::warn!(%error, count = hidden.len(), "不可见文件入库失败，计入失败");
                         resolved.failed += hidden.len();
                     }
@@ -210,24 +187,20 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let cf = app.curseforge()?;
     let chunk = app.config.curseforge_chunk_size;
 
-    let mut batches = app
-        .db
-        .chunked_all::<ModStamp>(
-            collection::CURSEFORGE_MODS,
-            doc! { "_id": 1, "dateModified": 1 },
-            chunk.max(1),
-        )
-        .await?;
-
     let mut total = 0usize;
     let mut outdated = Vec::new();
     let mut unprocessed = 0usize;
-    while let Some(batch) = batches.next().await {
-        let batch = batch?;
+    let mut after = None;
+    loop {
+        let batch = app.db.curseforge_mod_stamps(after, chunk).await?;
+        let Some(&(last, _)) = batch.last() else {
+            break;
+        };
+        after = Some(last);
         total += batch.len();
         let ids: Vec<i32> = batch
             .iter()
-            .map(|item| item.id)
+            .map(|(id, _)| *id)
             .filter(|id| *id >= MIN_MOD_ID)
             .collect();
         if ids.is_empty() {
@@ -247,18 +220,11 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
 
         // 这一批核对过了，不管内容有没有变。
         // 只是记账，写不进去也不该作废整轮
-        if let Err(error) = app
-            .db
-            .touch_checked(collection::CURSEFORGE_MODS, &ids, Utc::now())
-            .await
-        {
+        if let Err(error) = app.db.touch_curseforge_mods_checked(&ids, Utc::now()).await {
             tracing::warn!(%error, count = ids.len(), "checked_at 更新失败");
         }
 
-        let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch
-            .iter()
-            .map(|item| (item.id, item.date_modified))
-            .collect();
+        let local_stamps: HashMap<i32, Option<DateTime<Utc>>> = batch.into_iter().collect();
         for value in remote {
             let local_stamp = local_stamps.get(&value.id).copied().flatten();
             if !same_second(local_stamp, value.date_modified) {
@@ -326,13 +292,11 @@ pub async fn search(app: &App, game_id: i32, max_pages: i64, full: bool) -> Resu
                 }
 
                 let page_ids: Vec<i32> = response.data.iter().map(|value| value.id).collect();
-                let existing = app
+                let existing: HashSet<i32> = app
                     .db
-                    .existing_ids(collection::CURSEFORGE_MODS, &page_ids)
-                    .await?;
-                let existing: HashSet<i32> = existing
+                    .existing_curseforge_mod_ids(&page_ids)
+                    .await?
                     .into_iter()
-                    .filter_map(|value| value.as_i32().or_else(|| value.as_i64().map(|v| v as i32)))
                     .collect();
 
                 let fresh: Vec<i32> = page_ids

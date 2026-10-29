@@ -84,7 +84,7 @@ pub async fn execute(app: &App, command: &Command) -> Result<TaskSummary> {
     Ok(summary)
 }
 
-/// 执行任务并持久化一条摘要记录；MongoDB 写入失败只告警，不影响同步结果。
+/// 执行任务并持久化一条摘要记录；数据库写入失败只告警，不影响同步结果。
 pub async fn execute_with_history(
     app: &App,
     task_name: &str,
@@ -92,7 +92,7 @@ pub async fn execute_with_history(
 ) -> Result<TaskSummary> {
     let started_at = chrono::Utc::now();
     let mut run = TaskRun::new(task_name, command, started_at);
-    if let Some(run) = run.as_ref() {
+    if let Some(run) = run.as_mut() {
         if let Err(error) = app.db.insert_task_run(run).await {
             tracing::warn!(task = %task_name, %error, "写入任务开始记录失败");
         }
