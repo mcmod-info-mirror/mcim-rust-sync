@@ -18,10 +18,7 @@ pub enum Error {
     Request(#[from] reqwest::Error),
 
     #[error(transparent)]
-    Mongo(#[from] mongodb::error::Error),
-
-    #[error(transparent)]
-    Bson(#[from] bson::error::Error),
+    Database(#[from] sqlx::Error),
 
     #[error(transparent)]
     Redis(#[from] redis::RedisError),

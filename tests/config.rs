@@ -1,6 +1,6 @@
 //! 现有的 config.json 要能直接拿来用
 //!
-//! 已经废弃的键（job_config、interval、cron_trigger、telegram 等）会被忽略而不是报错
+//! 已经废弃的键（mongodb、job_config、interval、cron_trigger、telegram 等）会被忽略而不是报错
 
 use std::path::Path;
 
@@ -17,7 +17,6 @@ fn loads_existing_config() {
     assert_eq!(config.max_workers, 4);
     assert_eq!(config.curseforge_chunk_size, 1000);
     assert_eq!(config.modrinth_chunk_size, 50);
-    assert_eq!(config.mongodb.database, "mcim_backend");
     assert_eq!(config.redis.database, 0);
     assert_eq!(config.domain_rate_limits.len(), 4);
     assert_eq!(config.domain_rate_limits["api.curseforge.com"].refill_rate, 3);
@@ -30,15 +29,6 @@ fn falls_back_to_official_api() {
     assert_eq!(config.modrinth_api, "https://api.modrinth.com");
 }
 
-/// 密码里的特殊字符必须转义，否则连接串会被解析错
-#[test]
-fn escapes_mongodb_credentials() {
-    let config = fixture();
-    let uri = config.mongodb.uri();
-    assert!(uri.contains("p%40ss%20word%2F1"), "密码未正确转义: {}", uri);
-    assert!(uri.starts_with("mongodb://z0z0r4:"));
-}
-
 #[test]
 fn redis_uri_without_password() {
     let config = fixture();
@@ -49,7 +39,6 @@ fn redis_uri_without_password() {
 #[test]
 fn missing_file_falls_back_to_defaults() {
     let config = Config::load(Path::new("/nonexistent/config.json")).expect("应当回落到默认值");
-    assert_eq!(config.mongodb.host, "localhost");
     assert_eq!(config.max_workers, 8);
     assert!(config.schedule.is_empty());
 }

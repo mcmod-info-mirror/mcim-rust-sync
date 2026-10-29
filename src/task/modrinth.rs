@@ -1,34 +1,16 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use bson::doc;
-use futures::StreamExt;
-use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use serde_with::serde_as;
+use chrono::Utc;
 
 use crate::app::App;
 use crate::constants::MODRINTH_SEARCH_PAGE_SIZE;
+use crate::db::modrinth::ProjectStamp;
 use crate::db::queue::key;
 use crate::error::Result;
-use crate::models::collection;
-use crate::models::{FlexDateTime, modrinth::Project};
+use crate::models::modrinth::Project;
 use crate::sync::modrinth::ModrinthSync;
 
 use super::{TaskSummary, requeue, same_second};
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-struct ProjectStamp {
-    #[serde(rename = "_id")]
-    id: String,
-    #[serde_as(as = "Option<FlexDateTime>")]
-    #[serde(default)]
-    updated: Option<DateTime<Utc>>,
-    #[serde(default)]
-    versions: Option<Vec<String>>,
-    #[serde(default)]
-    game_versions: Option<Vec<String>>,
-}
 
 fn same_set(left: Option<&Vec<String>>, right: Option<&Vec<String>>) -> bool {
     // 按集合比较，Python 版按顺序比较，上游重排就会触发一次无意义的重同步
@@ -41,10 +23,10 @@ fn is_outdated(local: &ProjectStamp, remote: &Project) -> bool {
     if !same_second(local.updated, Some(remote.updated)) {
         return true;
     }
-    if !same_set(local.versions.as_ref(), remote.versions.as_ref()) {
+    if !same_set(Some(&local.versions), remote.versions.as_ref()) {
         return true;
     }
-    !same_set(local.game_versions.as_ref(), remote.game_versions.as_ref())
+    !same_set(Some(&local.game_versions), remote.game_versions.as_ref())
 }
 
 fn summarize(report: &crate::sync::Report<String, crate::sync::modrinth::ProjectSummary>) -> TaskSummary {
@@ -128,21 +110,20 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
     let mr = app.modrinth();
     let chunk = app.config.modrinth_chunk_size;
 
-    let mut batches = app
-        .db
-        .chunked_all::<ProjectStamp>(
-            collection::MODRINTH_PROJECTS,
-            doc! { "_id": 1, "updated": 1, "versions": 1, "game_versions": 1 },
-            chunk.max(1),
-        )
-        .await?;
-
     let mut total = 0usize;
     let mut outdated = Vec::new();
     let mut dead = Vec::new();
     let mut unprocessed = 0usize;
-    while let Some(batch) = batches.next().await {
-        let batch = batch?;
+    let mut after: Option<String> = None;
+    loop {
+        let batch = app
+            .db
+            .modrinth_project_stamps(after.as_deref(), chunk)
+            .await?;
+        let Some(last) = batch.last() else {
+            break;
+        };
+        after = Some(last.id.clone());
         total += batch.len();
         let ids: Vec<String> = batch.iter().map(|item| item.id.clone()).collect();
         let remote = match mr.api().get_projects(&ids).await {
@@ -159,7 +140,7 @@ pub async fn refresh(app: &App) -> Result<TaskSummary> {
         // 只是记账，写不进去也不该作废整轮
         if let Err(error) = app
             .db
-            .touch_checked(collection::MODRINTH_PROJECTS, &ids, Utc::now())
+            .touch_modrinth_projects_checked(&ids, Utc::now())
             .await
         {
             tracing::warn!(%error, count = ids.len(), "checked_at 更新失败");
@@ -250,19 +231,19 @@ const REFRESH_FULL_CHUNK: usize = 1000;
 
 pub async fn refresh_full(app: &App) -> Result<TaskSummary> {
     let mr = app.modrinth();
-    let mut batches = app
-        .db
-        .chunked_all::<ProjectStamp>(
-            collection::MODRINTH_PROJECTS,
-            doc! { "_id": 1 },
-            REFRESH_FULL_CHUNK,
-        )
-        .await?;
     tracing::info!("开始全量刷新");
 
     let mut summary = TaskSummary::default();
-    while let Some(batch) = batches.next().await {
-        let ids: Vec<String> = batch?.into_iter().map(|item| item.id).collect();
+    let mut after: Option<String> = None;
+    loop {
+        let ids = app
+            .db
+            .modrinth_project_ids(after.as_deref(), REFRESH_FULL_CHUNK)
+            .await?;
+        let Some(last) = ids.last() else {
+            break;
+        };
+        after = Some(last.clone());
         let report = mr.sync_projects(&ids).await;
         let part = summarize(&report);
         summary.total += part.total;
@@ -304,13 +285,11 @@ pub async fn search(app: &App, max_pages: i64, full: bool) -> Result<TaskSummary
             .iter()
             .map(|hit| hit.project_id.clone())
             .collect();
-        let existing = app
+        let existing: HashSet<String> = app
             .db
-            .existing_ids(collection::MODRINTH_PROJECTS, &page_ids)
-            .await?;
-        let existing: HashSet<String> = existing
+            .existing_modrinth_project_ids(&page_ids)
+            .await?
             .into_iter()
-            .filter_map(|value| value.as_str().map(str::to_string))
             .collect();
 
         let fresh: Vec<String> = page_ids
@@ -381,7 +360,7 @@ mod tests {
 
     fn project(updated: &str, versions: &[&str], game_versions: &[&str]) -> Project {
         let value = serde_json::json!({
-            "_id": "Wnxd13zP",
+            "id": "Wnxd13zP",
             "slug": "clumps",
             "team": "team",
             "published": "2020-01-01T00:00:00Z",
@@ -394,13 +373,12 @@ mod tests {
     }
 
     fn stamp(updated: &str, versions: &[&str], game_versions: &[&str]) -> ProjectStamp {
-        let value = serde_json::json!({
-            "_id": "Wnxd13zP",
-            "updated": updated,
-            "versions": versions,
-            "game_versions": game_versions,
-        });
-        serde_json::from_value(value).expect("构造 ProjectStamp 失败")
+        ProjectStamp {
+            id: "Wnxd13zP".to_string(),
+            updated: Some(updated.parse().expect("时间解析失败")),
+            versions: versions.iter().map(|v| v.to_string()).collect(),
+            game_versions: game_versions.iter().map(|v| v.to_string()).collect(),
+        }
     }
 
     #[test]

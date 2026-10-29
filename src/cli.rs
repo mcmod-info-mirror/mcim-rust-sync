@@ -34,7 +34,7 @@ pub enum Command {
     #[command(subcommand)]
     Modrinth(ModrinthTask),
 
-    /// 建立同步与查询所需的 MongoDB 索引，可重复执行
+    /// 建立同步与查询所需的 PostgreSQL 索引，可重复执行
     Indexes,
 
     /// 常驻，按配置里的 schedule 定时执行任务

@@ -1,6 +1,5 @@
-use bson::oid::ObjectId;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 use crate::cli::{Command, CurseforgeTask, ModrinthTask};
 
@@ -10,16 +9,16 @@ pub const PARTIAL_FAILURE: &str = "partial_failure";
 pub const ERROR: &str = "error";
 pub const INTERRUPTED: &str = "interrupted";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow)]
 pub struct TaskRun {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
+    /// 写入 `task_runs` 后由数据库分配
+    pub id: Option<i64>,
     pub task: String,
     pub provider: String,
     pub operation: String,
     pub status: String,
-    pub started_at: bson::DateTime,
-    pub finished_at: Option<bson::DateTime>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
     pub duration_ms: Option<i64>,
     pub total: i64,
     pub synced: i64,
@@ -58,12 +57,12 @@ impl TaskRun {
         };
 
         Some(Self {
-            id: ObjectId::new(),
+            id: None,
             task: task.to_string(),
             provider: provider.to_string(),
             operation: operation.to_string(),
             status: RUNNING.to_string(),
-            started_at: bson::DateTime::from_chrono(started_at),
+            started_at,
             finished_at: None,
             duration_ms: None,
             total: 0,
@@ -89,12 +88,8 @@ impl TaskRun {
         error: Option<&str>,
     ) {
         self.status = status.to_string();
-        self.finished_at = Some(bson::DateTime::from_chrono(finished_at));
-        self.duration_ms = Some(
-            (finished_at - self.started_at.to_chrono())
-                .num_milliseconds()
-                .max(0),
-        );
+        self.finished_at = Some(finished_at);
+        self.duration_ms = Some((finished_at - self.started_at).num_milliseconds().max(0));
         self.total = stats.total;
         self.synced = stats.synced;
         self.not_found = stats.not_found;
@@ -131,16 +126,6 @@ fn modrinth_operation(task: &ModrinthTask) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn task_run_serializes_with_bson_dates() {
-        let command = Command::Modrinth(ModrinthTask::Refresh);
-        let run = TaskRun::new("nightly-refresh", &command, Utc::now()).expect("task run");
-        let document = bson::serialize_to_document(&run).expect("bson document");
-        assert_eq!(document.get_str("task").unwrap(), "nightly-refresh");
-        assert!(document.get_datetime("started_at").is_ok());
-        assert!(serde_json::to_value(&run).is_ok());
-    }
 
     #[test]
     fn indexes_are_not_recorded_as_sync_task_runs() {

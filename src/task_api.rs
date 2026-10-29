@@ -51,13 +51,13 @@ struct TaskRunResponse {
 impl From<TaskRun> for TaskRunResponse {
     fn from(run: TaskRun) -> Self {
         Self {
-            id: run.id.to_hex(),
+            id: run.id.map(|id| id.to_string()).unwrap_or_default(),
             task: run.task,
             provider: run.provider,
             operation: run.operation,
             status: run.status,
-            started_at: run.started_at.to_chrono(),
-            finished_at: run.finished_at.map(|value| value.to_chrono()),
+            started_at: run.started_at,
+            finished_at: run.finished_at,
             duration_ms: run.duration_ms,
             total: run.total,
             synced: run.synced,
@@ -228,7 +228,7 @@ fn parse_query(raw: &str) -> std::collections::HashMap<String, String> {
 
 fn public_error(error: &Error) -> String {
     match error {
-        Error::Mongo(_) | Error::Bson(_) => "database error".to_string(),
+        Error::Database(_) => "database error".to_string(),
         _ => "request failed".to_string(),
     }
 }

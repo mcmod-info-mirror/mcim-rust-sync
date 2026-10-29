@@ -26,47 +26,8 @@ fn default_shutdown_grace_secs() -> u64 {
 fn default_task_api_addr() -> String {
     "0.0.0.0:9901".to_string()
 }
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-pub struct MongodbConfig {
-    pub host: String,
-    pub port: u16,
-    pub auth: bool,
-    pub user: Option<String>,
-    pub password: Option<String>,
-    pub database: String,
-}
-
-impl Default for MongodbConfig {
-    fn default() -> Self {
-        Self {
-            host: "localhost".to_string(),
-            port: 27017,
-            auth: false,
-            user: None,
-            password: None,
-            database: "database".to_string(),
-        }
-    }
-}
-
-impl MongodbConfig {
-    pub fn uri(&self) -> String {
-        if self.auth {
-            let user = self.user.as_deref().unwrap_or_default();
-            let password = self.password.as_deref().unwrap_or_default();
-            format!(
-                "mongodb://{}:{}@{}:{}/?authSource=admin",
-                urlencode(user),
-                urlencode(password),
-                self.host,
-                self.port
-            )
-        } else {
-            format!("mongodb://{}:{}", self.host, self.port)
-        }
-    }
+fn default_database_url() -> String {
+    "postgresql://postgres@localhost:5432/mcim_backend".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -126,8 +87,9 @@ pub struct Config {
     #[serde(default)]
     pub debug: bool,
 
-    #[serde(default)]
-    pub mongodb: MongodbConfig,
+    /// PostgreSQL 连接串，表结构由 mcim-rust-api 建立
+    #[serde(default = "default_database_url")]
+    pub database_url: String,
 
     #[serde(default)]
     pub redis: RedisConfig,
@@ -238,23 +200,8 @@ impl Config {
             self.debug = value;
         }
 
-        if let Some(value) = env.text("MONGODB_HOST") {
-            self.mongodb.host = value;
-        }
-        if let Some(value) = env.parse("MONGODB_PORT")? {
-            self.mongodb.port = value;
-        }
-        if let Some(value) = env.parse("MONGODB_AUTH")? {
-            self.mongodb.auth = value;
-        }
-        if let Some(value) = env.text("MONGODB_USER") {
-            self.mongodb.user = Some(value);
-        }
-        if let Some(value) = env.text("MONGODB_PASSWORD") {
-            self.mongodb.password = Some(value);
-        }
-        if let Some(value) = env.text("MONGODB_DATABASE") {
-            self.mongodb.database = value;
+        if let Some(value) = env.text("DATABASE_URL") {
+            self.database_url = value;
         }
 
         if let Some(value) = env.text("REDIS_HOST") {
@@ -351,9 +298,7 @@ mod tests {
     #[test]
     fn env_alone_is_enough() {
         let config = with_env(&[
-            ("MONGODB_HOST", "mongo"),
-            ("MONGODB_PORT", "27018"),
-            ("MONGODB_DATABASE", "mcim"),
+            ("DATABASE_URL", "postgresql://mcim:secret@db:5432/mcim"),
             ("REDIS_HOST", "redis"),
             ("REDIS_DATABASE", "3"),
             ("MAX_WORKERS", "16"),
@@ -362,9 +307,7 @@ mod tests {
         ])
         .expect("解析失败");
 
-        assert_eq!(config.mongodb.host, "mongo");
-        assert_eq!(config.mongodb.port, 27018);
-        assert_eq!(config.mongodb.database, "mcim");
+        assert_eq!(config.database_url, "postgresql://mcim:secret@db:5432/mcim");
         assert_eq!(config.redis.host, "redis");
         assert_eq!(config.redis.database, 3);
         assert_eq!(config.max_workers, 16);

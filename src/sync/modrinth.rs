@@ -1,11 +1,10 @@
-use bson::doc;
 use chrono::Utc;
 use futures::stream::{self, StreamExt};
 
 use crate::api::ModrinthApi;
 use crate::db::Database;
+use crate::db::modrinth::RemovedProject;
 use crate::error::Result;
-use crate::models::collection;
 use crate::models::modrinth::{File, Project, Version};
 use crate::models::translate::ModrinthTranslation;
 
@@ -17,15 +16,6 @@ pub struct ProjectSummary {
     pub slug: String,
     pub version_count: usize,
     pub file_count: usize,
-}
-
-/// 删除一个项目时各集合实际删掉的条数
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RemovedCounts {
-    pub projects: u64,
-    pub versions: u64,
-    pub files: u64,
-    pub translations: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -82,9 +72,7 @@ impl ModrinthSync {
         let slug = project.slug.clone();
         // 刚从上游取回来，等同于刚核对过
         project.checked_at = Some(project.sync_at);
-        self.db
-            .upsert_many(collection::MODRINTH_PROJECTS, &[project], 1)
-            .await?;
+        self.db.replace_modrinth_projects(&[project]).await?;
 
         Ok(Outcome::Synced(ProjectSummary {
             id: project_id.to_string(),
@@ -140,28 +128,18 @@ impl ModrinthSync {
         }
         let file_count = files.len();
 
-        self.db
-            .upsert_many(collection::MODRINTH_FILES, &files, self.concurrency)
-            .await?;
+        self.db.upsert_modrinth_files(&files).await?;
         drop(files);
-        self.db
-            .upsert_many(collection::MODRINTH_VERSIONS, &versions, self.concurrency)
-            .await?;
+        self.db.replace_modrinth_versions(&versions).await?;
 
         let kept: Vec<&str> = versions.iter().map(|v| v.id.as_str()).collect();
         let removed_versions = self
             .db
-            .delete_many(
-                collection::MODRINTH_VERSIONS,
-                doc! { "project_id": project_id, "_id": { "$nin": &kept } },
-            )
+            .delete_stale_modrinth_versions(project_id, &kept)
             .await?;
         let removed_files = self
             .db
-            .delete_many(
-                collection::MODRINTH_FILES,
-                doc! { "project_id": project_id, "version_id": { "$nin": &kept } },
-            )
+            .delete_stale_modrinth_files(project_id, &kept)
             .await?;
 
         tracing::info!(
@@ -176,11 +154,7 @@ impl ModrinthSync {
     }
 
     async fn sync_translation(&self, project_id: &str, description: Option<&str>) -> Result<()> {
-        let existing = self
-            .db
-            .collection::<ModrinthTranslation>(collection::MODRINTH_TRANSLATED)
-            .find_one(doc! { "_id": project_id })
-            .await?;
+        let existing = self.db.modrinth_translation(project_id).await?;
 
         let unchanged = existing
             .as_ref()
@@ -196,9 +170,7 @@ impl ModrinthSync {
             need_to_update: true,
             translated_at: existing.as_ref().and_then(|r| r.translated_at),
         };
-        self.db
-            .upsert_many(collection::MODRINTH_TRANSLATED, &[record], 1)
-            .await?;
+        self.db.upsert_modrinth_translation(&record).await?;
         Ok(())
     }
 
@@ -216,13 +188,7 @@ impl ModrinthSync {
         let game_versions = stamp_all(game_versions, |item| &mut item.sync_at, stamp);
 
         self.db
-            .refresh_collection(collection::MODRINTH_CATEGORIES, &categories, stamp)
-            .await?;
-        self.db
-            .refresh_collection(collection::MODRINTH_LOADERS, &loaders, stamp)
-            .await?;
-        self.db
-            .refresh_collection(collection::MODRINTH_GAME_VERSIONS, &game_versions, stamp)
+            .refresh_modrinth_tags(&categories, &loaders, &game_versions)
             .await?;
 
         Ok(TagCounts {
@@ -236,35 +202,8 @@ impl ModrinthSync {
     ///
     /// Python 版这里删的是 `modrinth_hashes` 集合，而真实集合叫 `modrinth_files`，
     /// 所以文件文档从来没被删掉过；翻译记录同样没删，会一直堆积
-    pub async fn remove_project(&self, project_id: &str) -> Result<RemovedCounts> {
-        let files = self
-            .db
-            .delete_many(
-                collection::MODRINTH_FILES,
-                doc! { "project_id": project_id },
-            )
-            .await?;
-        let versions = self
-            .db
-            .delete_many(
-                collection::MODRINTH_VERSIONS,
-                doc! { "project_id": project_id },
-            )
-            .await?;
-        let translations = self
-            .db
-            .delete_by_id(collection::MODRINTH_TRANSLATED, &project_id)
-            .await?;
-        let projects = self
-            .db
-            .delete_by_id(collection::MODRINTH_PROJECTS, &project_id)
-            .await?;
-        Ok(RemovedCounts {
-            projects,
-            versions,
-            files,
-            translations,
-        })
+    pub async fn remove_project(&self, project_id: &str) -> Result<RemovedProject> {
+        self.db.remove_modrinth_project(project_id).await
     }
 }
 
